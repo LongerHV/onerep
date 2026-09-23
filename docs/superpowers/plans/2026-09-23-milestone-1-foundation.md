@@ -2598,7 +2598,7 @@ git commit -m "feat: add onerep command with serve, migrate and backup"
 
 **Interfaces:**
 - Consumes: everything above
-- Produces: tasks `generate`, `build`, `test`, `lint`, `dev`, `dev:oidc`, `dex`, `migrate:diff`, `migrate:check`, `check:generated`, `ci`, `image`; image `ghcr.io/longerhv/onerep` (tags `edge`, `sha-<7>` from main, `<version>`, `latest` from `v*` tags)
+- Produces: tasks `generate`, `build`, `test`, `lint`, `dev`, `dev:oidc`, `dex`, `migrate:diff`, `migrate:check`, `check:generated`, `ci`, `image`; image `ghcr.io/longerhv/onerep` (tags `edge`, `sha-<7>` from master, `<version>`, `latest` from `v*` tags)
 
 - [ ] **Step 1: Local identity provider**
 
@@ -3050,7 +3050,7 @@ git commit -m "chore: add dev tooling, container image build and CI workflows"
 - `task ci` passes on a clean checkout.
 - `task dev` shows "Hi, <user>". A Dex login works via `task dex` plus `task dev:oidc`.
 - The ko image runs and `/healthz` returns `ok`.
-- After pushing, the CI workflow is green, and the `release` workflow publishes `ghcr.io/longerhv/onerep:edge` from `main`.
+- After pushing, the CI workflow is green, and the `release` workflow publishes `ghcr.io/longerhv/onerep:edge` from `master`.
 
 Deviations from the spec, deliberate and minor:
 - Static assets live in `internal/web/static/` rather than `web/static/`, so the package that embeds them owns them.
