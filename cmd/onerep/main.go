@@ -56,6 +56,10 @@ func run(ctx context.Context, args []string) error {
 		if len(args) != 1 {
 			return errors.New("backup: expected exactly one destination path")
 		}
+		// store.Open creates missing files; a backup must never back up an empty new database.
+		if _, err := os.Stat(cfg.DBPath); err != nil {
+			return fmt.Errorf("backup: database %s: %w", cfg.DBPath, err)
+		}
 		db, err := store.Open(ctx, cfg.DBPath)
 		if err != nil {
 			return err
