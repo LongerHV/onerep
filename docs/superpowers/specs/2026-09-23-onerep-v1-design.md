@@ -81,15 +81,15 @@ Conventions: all IDs are UUIDv7 stored as TEXT. Session and set IDs are generate
 
 ### Identity and setup
 
-- `users`: `id`, `oidc_issuer`, `oidc_sub` (unique together), `email`, `name`, `unit` (`kg`|`lb`), `e1rm_window_days` (default 30), `created_at`.
+- `users`: `id`, `oidc_issuer`, `oidc_sub` (unique together), `email`, `name`, `unit` (`kg`|`lb`), `e1rm_window_days` (default 30), `equipment_initialized` (starter profiles created), `created_at`.
 - `auth_sessions`: `id` (random 256-bit, stored hashed), `user_id`, `csrf_token`, `expires_at`, `created_at`.
 - `api_tokens`: `id`, `user_id`, `name`, `token_hash`, `scope` (`mcp`), `last_used_at`, `created_at`, `revoked_at`.
-- `equipment`: `id`, `user_id`, `name`, `kind` (`barbell`|`dumbbell`|`machine`|`cable`|`bodyweight`), `unit`, `config` JSON:
+- `equipment`: `id`, `user_id`, `name`, `kind` (`barbell`|`dumbbell`|`machine`|`cable`|`bodyweight`), `unit`, `is_default` (at most one per user and kind), `config` JSON:
   - barbell: `{ "bar": 20, "plates": [25, 20, 15, 10, 5, 2.5, 1.25], "plate_pairs": {"1.25": 2} }` (plate list = available sizes; optional per-size pair counts, unlimited if absent)
   - dumbbell: `{ "weights": [2, 4, 6, ...] }`
   - machine / cable: `{ "stack": [5, 10, 15, ...] }` or `{ "min": 5, "step": 5, "max": 100 }`
   - bodyweight: `{}`
-- `exercises`: `id`, `user_id` (NULL = global seed), `slug`, `name`, `measurement` (`weight_reps`|`bw_reps`|`reps`|`time`|`distance_time`), `equipment_kind`, `primary_muscles` JSON array, `secondary_muscles` JSON array, `aliases` JSON array. Unique `(user_id, slug)`. A user row with the same slug as a global row shadows it for that user.
+- `exercises`: `id`, `user_id` (NULL = global seed), `slug`, `name`, `measurement` (`weight_reps`|`bw_reps`|`reps`|`time`|`distance_time`), `equipment_kind`, `primary_muscles` JSON array, `secondary_muscles` JSON array, `aliases` JSON array, `hidden`. Unique `(user_id, slug)` (and `slug` among global rows). A user row with the same slug as a global row shadows it for that user.
 - `exercise_alternatives`: `user_id`, `slug`, `alt_slug`. Default alternatives come from seed data; user rows add to them.
 - `user_exercise`: `user_id`, `slug`, `equipment_id` (nullable), `training_max_kg` (nullable), `updated_at`.
 - `training_max_log`: `id`, `user_id`, `slug`, `old_kg`, `new_kg`, `source` (`web`|`mcp`), `note`, `created_at`.
@@ -174,7 +174,7 @@ Two pure steps:
    - `pct_tm` → `pct × TM`; if no TM, unresolved.
    - `rpe` → `e1RM × pct(reps, rpe)` from the RTS table, where e1RM is the best `e1rm_kg` for that slug within `e1rm_window_days`; if none, unresolved. Ranges use the lower bound for the lookup.
    - `drop_pct` → resolved at run time from the previous set's actual weight.
-   - Result rounded down to the nearest achievable load for the linked equipment (barbell: bar + symmetric plate pairs; dumbbell/stack: nearest lower available value). Unlinked exercises round to 0.5 kg / 1 lb.
+   - Result rounded down to the nearest achievable load for the linked equipment (barbell: bar + symmetric plate pairs; dumbbell/stack: nearest lower available value). The equipment used is the exercise's explicit link (`user_exercise.equipment_id`), else the user's default profile for the exercise's `equipment_kind`, else none: 0.5 kg / 1 lb steps. On first sign-in each user gets starter defaults: a barbell (20 kg bar, plates 25/20/15/10/5/2.5/1.25) and dumbbells (2–50 kg in 2 kg steps), or in lb (45 lb bar, plates 45/35/25/10/5/2.5; dumbbells 5–100 lb in 5 lb steps).
    - Unresolved sets display "pick weight"; the user enters the load.
 
 When a session starts, the expanded and resolved day is written to `sessions.snapshot`. During the session the client re-runs ResolveLoads for remaining RPE-targeted sets of the current exercise after each logged set, using the e1RM of the last completed working set (see §7).
