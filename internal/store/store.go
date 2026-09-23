@@ -7,6 +7,7 @@ import (
 	"embed"
 	"errors"
 	"fmt"
+	"io/fs"
 	"net/url"
 	"time"
 
@@ -36,9 +37,18 @@ type DB struct {
 	read  *sql.DB
 }
 
+// dsn returns the connection string for application connections (foreign keys enforced).
 func dsn(path string, extra ...string) string {
+	return dsnWithForeignKeys(path, true, extra...)
+}
+
+func dsnWithForeignKeys(path string, foreignKeys bool, extra ...string) string {
+	fk := "foreign_keys(0)"
+	if foreignKeys {
+		fk = "foreign_keys(1)"
+	}
 	q := url.Values{}
-	for _, p := range []string{"foreign_keys(1)", "journal_mode(WAL)", "busy_timeout(5000)", "synchronous(NORMAL)"} {
+	for _, p := range []string{fk, "journal_mode(WAL)", "busy_timeout(5000)", "synchronous(NORMAL)"} {
 		q.Add("_pragma", p)
 	}
 	for i := 0; i < len(extra); i += 2 {
@@ -84,19 +94,24 @@ func (db *DB) Close() error {
 
 // Migrate applies all pending embedded migrations. It uses its own connection
 // because golang-migrate closes the handle it is given.
+//
+// Foreign keys are off on that connection: golang-migrate wraps each migration
+// in a transaction, where the PRAGMA foreign_keys=off that Atlas emits around
+// table rebuilds is a no-op, so DROP TABLE would cascade-delete child rows.
+// Integrity is checked with foreign_key_check once all migrations are applied.
 func Migrate(path string) error {
-	if err := migrateUp(path); err != nil {
+	if err := migrateFS(path, migrationsFS, "migrations"); err != nil {
 		return fmt.Errorf("migrate %s: %w", path, err)
 	}
 	return nil
 }
 
-func migrateUp(path string) error {
-	src, err := iofs.New(migrationsFS, "migrations")
+func migrateFS(path string, fsys fs.FS, dir string) error {
+	src, err := iofs.New(fsys, dir)
 	if err != nil {
 		return err
 	}
-	conn, err := sql.Open("sqlite", dsn(path))
+	conn, err := sql.Open("sqlite", dsnWithForeignKeys(path, false))
 	if err != nil {
 		return err
 	}
@@ -113,6 +128,37 @@ func migrateUp(path string) error {
 	defer m.Close()
 	if err := m.Up(); err != nil && !errors.Is(err, migrate.ErrNoChange) {
 		return err
+	}
+	return checkForeignKeys(path)
+}
+
+// checkForeignKeys fails if any row references a missing parent.
+func checkForeignKeys(path string) error {
+	conn, err := sql.Open("sqlite", dsn(path))
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+	rows, err := conn.QueryContext(context.Background(), "PRAGMA foreign_key_check")
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	var violations []string
+	for rows.Next() {
+		var table, parent string
+		var rowid sql.NullInt64
+		var fkid int
+		if err := rows.Scan(&table, &rowid, &parent, &fkid); err != nil {
+			return err
+		}
+		violations = append(violations, fmt.Sprintf("%s(rowid %d) -> %s", table, rowid.Int64, parent))
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	if len(violations) > 0 {
+		return fmt.Errorf("foreign key violations after migration: %v", violations)
 	}
 	return nil
 }

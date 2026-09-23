@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"testing/fstest"
 )
 
 // newTestDB returns a migrated database in a temporary directory.
@@ -86,5 +87,53 @@ func TestOpenAndMigrateMissingDirectory(t *testing.T) {
 	}
 	if _, err := Open(context.Background(), path); err == nil || !strings.Contains(err.Error(), path) {
 		t.Fatalf("Open: want error naming %s, got %v", path, err)
+	}
+}
+
+// A migration that rebuilds a parent table (Atlas does this for most column
+// changes) must not cascade-delete child rows.
+func TestTableRebuildMigrationKeepsChildRows(t *testing.T) {
+	fsys := fstest.MapFS{
+		"m/1_init.up.sql": {Data: []byte(`
+			CREATE TABLE parents (id TEXT NOT NULL PRIMARY KEY, v TEXT NOT NULL);
+			CREATE TABLE children (id TEXT NOT NULL PRIMARY KEY,
+				parent_id TEXT NOT NULL REFERENCES parents (id) ON DELETE CASCADE);`)},
+		"m/2_seed.up.sql": {Data: []byte(`
+			INSERT INTO parents VALUES ('p', 'x');
+			INSERT INTO children VALUES ('c', 'p');`)},
+		"m/3_rebuild.up.sql": {Data: []byte(`
+			PRAGMA foreign_keys = off;
+			CREATE TABLE new_parents (id TEXT NOT NULL PRIMARY KEY, v TEXT NOT NULL, w TEXT);
+			INSERT INTO new_parents (id, v) SELECT id, v FROM parents;
+			DROP TABLE parents;
+			ALTER TABLE new_parents RENAME TO parents;
+			PRAGMA foreign_keys = on;`)},
+	}
+	path := filepath.Join(t.TempDir(), "test.db")
+	if err := migrateFS(path, fsys, "m"); err != nil {
+		t.Fatal(err)
+	}
+	db, err := Open(context.Background(), path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	var n int
+	if err := db.read.QueryRow("SELECT count(*) FROM children").Scan(&n); err != nil || n != 1 {
+		t.Fatalf("children after rebuild = %d, %v; want 1", n, err)
+	}
+}
+
+func TestMigrationLeavingDanglingForeignKeysFails(t *testing.T) {
+	fsys := fstest.MapFS{
+		"m/1_init.up.sql": {Data: []byte(`
+			CREATE TABLE parents (id TEXT NOT NULL PRIMARY KEY);
+			CREATE TABLE children (id TEXT NOT NULL PRIMARY KEY,
+				parent_id TEXT NOT NULL REFERENCES parents (id));
+			INSERT INTO children VALUES ('c', 'missing');`)},
+	}
+	err := migrateFS(filepath.Join(t.TempDir(), "test.db"), fsys, "m")
+	if err == nil || !strings.Contains(err.Error(), "foreign key") {
+		t.Fatalf("want foreign key violation error, got %v", err)
 	}
 }
