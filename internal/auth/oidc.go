@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/coreos/go-oidc/v3/oidc"
@@ -52,11 +53,21 @@ type flowState struct {
 }
 
 // safeNext only allows local absolute paths as post-login redirect targets.
+// Browsers strip tabs and newlines and treat backslashes as slashes, so
+// "/\t/evil.example" would become "//evil.example"; such characters are refused.
 func safeNext(next string) string {
-	if strings.HasPrefix(next, "/") && !strings.HasPrefix(next, "//") && !strings.HasPrefix(next, "/\\") {
-		return next
+	if !strings.HasPrefix(next, "/") || strings.HasPrefix(next, "//") {
+		return "/"
 	}
-	return "/"
+	for _, c := range next {
+		if c < 0x20 || c == 0x7f || c == '\\' {
+			return "/"
+		}
+	}
+	if u, err := url.Parse(next); err != nil || u.Scheme != "" || u.Host != "" {
+		return "/"
+	}
+	return next
 }
 
 // Login redirects to the identity provider.
