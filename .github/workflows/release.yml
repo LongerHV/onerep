@@ -1,0 +1,32 @@
+name: Release image
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: cachix/install-nix-action@v31
+        with:
+          github_access_token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Publish to GHCR
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          export KO_DOCKER_REPO="ghcr.io/${GITHUB_REPOSITORY,,}"
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            tags="${GITHUB_REF_NAME#v},latest"
+          else
+            tags="edge,sha-${GITHUB_SHA::7}"
+          fi
+          nix develop --command task licenses
+          echo "$GITHUB_TOKEN" | nix develop --command ko login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+          nix develop --command ko build --bare --tags "$tags" ./cmd/onerep

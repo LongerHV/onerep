@@ -5,10 +5,54 @@ vars:
   DEV_DB_URL: "sqlite://dev?mode=memory"
 
 tasks:
+  generate:
+    desc: Generate templ components and the Tailwind stylesheet
+    cmds:
+      - templ generate
+      - tailwindcss -i internal/web/styles/input.css -o internal/web/static/app.css --minify
+
+  build:
+    desc: Build the onerep binary into ./bin
+    deps: [generate]
+    cmds:
+      - go build -trimpath -o bin/onerep ./cmd/onerep
+
   test:
     desc: Run all Go tests
     cmds:
       - go test ./...
+
+  lint:
+    desc: Run golangci-lint
+    cmds:
+      - golangci-lint run ./...
+
+  dev:
+    desc: Run with live reload, signed in as the dev user (no IdP needed)
+    env:
+      ONEREP_ENV: dev
+      ONEREP_DEV_USER: '{{.USER | default "alice"}}'
+      ONEREP_DB: ./tmp/onerep.db
+    cmds:
+      - mkdir -p tmp
+      - air
+
+  dev:oidc:
+    desc: Run with live reload against the local Dex (start `task dex` first)
+    env:
+      ONEREP_ENV: dev
+      ONEREP_DB: ./tmp/onerep.db
+      ONEREP_OIDC_ISSUER: http://127.0.0.1:5556/dex
+      ONEREP_OIDC_CLIENT_ID: onerep
+      ONEREP_OIDC_CLIENT_SECRET: onerep-dev-secret
+    cmds:
+      - mkdir -p tmp
+      - air
+
+  dex:
+    desc: Run the local Dex identity provider (alice@example.com / password)
+    cmds:
+      - dex serve dev/dex.yaml
 
   migrate:diff:
     desc: Generate a migration from internal/store/schema.sql (usage task migrate:diff NAME=add_foo)
@@ -29,8 +73,40 @@ tasks:
           exit 1
         fi
 
-  generate:
-    desc: Generate templ components and the Tailwind stylesheet
+  check:generated:
+    desc: Fail if generated files (templ, CSS) are out of date
+    deps: [generate]
     cmds:
-      - templ generate
-      - tailwindcss -i internal/web/styles/input.css -o internal/web/static/app.css --minify
+      - |
+        if [ -n "$(git status --porcelain -- '*_templ.go' internal/web/static/app.css)" ]; then
+          git status --porcelain -- '*_templ.go' internal/web/static/app.css
+          echo "generated files are stale; run: task generate"
+          exit 1
+        fi
+
+  licenses:check:
+    desc: Fail if a Go dependency of the binary has a license incompatible with AGPL-3.0
+    cmds:
+      - go-licenses check ./cmd/onerep --ignore github.com/LongerHV/onerep --allowed_licenses=MIT,BSD-2-Clause,BSD-3-Clause,ISC,0BSD,Apache-2.0
+
+  licenses:
+    desc: Collect onerep and dependency license texts into the image data dir (cmd/onerep/kodata)
+    cmds:
+      - rm -rf cmd/onerep/kodata/third_party
+      - go-licenses save ./cmd/onerep --ignore github.com/LongerHV/onerep --save_path cmd/onerep/kodata/third_party
+      - cp LICENSE cmd/onerep/kodata/LICENSE
+
+  ci:
+    desc: Everything CI checks (except the image build)
+    cmds:
+      - task: check:generated
+      - task: lint
+      - task: test
+      - task: migrate:check
+      - task: licenses:check
+
+  image:
+    desc: Build the container image locally without pushing
+    deps: [licenses]
+    cmds:
+      - KO_DOCKER_REPO=ko.local ko build --bare --push=false ./cmd/onerep

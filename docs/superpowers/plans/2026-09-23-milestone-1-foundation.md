@@ -2803,13 +2803,14 @@ tasks:
   licenses:check:
     desc: Fail if a Go dependency of the binary has a license incompatible with AGPL-3.0
     cmds:
-      - go-licenses check ./cmd/onerep --allowed_licenses=MIT,BSD-2-Clause,BSD-3-Clause,ISC,0BSD,Apache-2.0
+      - go-licenses check ./cmd/onerep --ignore github.com/LongerHV/onerep --allowed_licenses=MIT,BSD-2-Clause,BSD-3-Clause,ISC,0BSD,Apache-2.0
 
   licenses:
-    desc: Collect dependency license texts into the image data dir (cmd/onerep/kodata/third_party)
+    desc: Collect onerep and dependency license texts into the image data dir (cmd/onerep/kodata)
     cmds:
       - rm -rf cmd/onerep/kodata/third_party
-      - go-licenses save ./cmd/onerep --save_path cmd/onerep/kodata/third_party
+      - go-licenses save ./cmd/onerep --ignore github.com/LongerHV/onerep --save_path cmd/onerep/kodata/third_party
+      - cp LICENSE cmd/onerep/kodata/LICENSE
 
   ci:
     desc: Everything CI checks (except the image build)

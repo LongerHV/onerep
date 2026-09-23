@@ -1,0 +1,31 @@
+# Local identity provider for development. Run with `task dex`.
+# Users: alice@example.com / password, bob@example.com / password
+issuer: http://127.0.0.1:5556/dex
+
+storage:
+  type: memory
+
+web:
+  http: 127.0.0.1:5556
+
+oauth2:
+  skipApprovalScreen: true
+
+staticClients:
+  - id: onerep
+    name: onerep (dev)
+    secret: onerep-dev-secret
+    redirectURIs:
+      - http://localhost:8080/auth/callback
+
+enablePasswordDB: true
+staticPasswords:
+  - email: alice@example.com
+    # bcrypt of "password"
+    hash: "$2a$10$2b2cU8CPhOTaGrs1HRQuAueS7JTT5ZHsHSzYiFPm1leZck7Mc8T4W"
+    username: alice
+    userID: 0a8b1f3e-6c1d-4f7a-9d59-3f0c2b6a1e01
+  - email: bob@example.com
+    hash: "$2a$10$2b2cU8CPhOTaGrs1HRQuAueS7JTT5ZHsHSzYiFPm1leZck7Mc8T4W"
+    username: bob
+    userID: 0a8b1f3e-6c1d-4f7a-9d59-3f0c2b6a1e02

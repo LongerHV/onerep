@@ -1,0 +1,14 @@
+# Live reload for `task dev`.
+root = "."
+tmp_dir = "tmp"
+
+[build]
+  cmd = "templ generate && tailwindcss -i internal/web/styles/input.css -o internal/web/static/app.css --minify && go build -o ./tmp/onerep ./cmd/onerep"
+  entrypoint = ["./tmp/onerep", "serve"]
+  include_ext = ["go", "templ", "css", "sql", "js"]
+  exclude_dir = ["tmp", "bin", ".scratch", ".direnv", "docs"]
+  exclude_regex = ["_templ\\.go$", "_test\\.go$"]
+  exclude_file = ["internal/web/static/app.css"]
+  delay = 200
+  kill_delay = "2s"
+  send_interrupt = true

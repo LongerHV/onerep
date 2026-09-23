@@ -1,0 +1,20 @@
+# Example deployment. Point the ONEREP_OIDC_* variables at your identity
+# provider (Dex, Authentik, Keycloak, ...) and register
+# ${ONEREP_BASE_URL}/auth/callback as the redirect URI.
+#
+#   mkdir -p data && docker compose up -d
+services:
+  onerep:
+    image: ghcr.io/longerhv/onerep:latest
+    restart: unless-stopped
+    user: "${UID:-1000}:${GID:-1000}"
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./data:/data
+    environment:
+      ONEREP_DB: /data/onerep.db
+      ONEREP_BASE_URL: https://gym.example.com
+      ONEREP_OIDC_ISSUER: https://id.example.com
+      ONEREP_OIDC_CLIENT_ID: onerep
+      ONEREP_OIDC_CLIENT_SECRET: change-me

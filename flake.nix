@@ -25,6 +25,7 @@
             gopls
             gotools
             golangci-lint
+            go-licenses
             templ
             air
 
