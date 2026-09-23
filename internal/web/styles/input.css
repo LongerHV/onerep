@@ -1,0 +1,4 @@
+/* Only templ views are scanned for class names, so the output is deterministic. */
+@import "tailwindcss" source(none);
+
+@source "../views";

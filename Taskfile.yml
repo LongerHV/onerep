@@ -28,3 +28,9 @@ tasks:
           echo "$out"
           exit 1
         fi
+
+  generate:
+    desc: Generate templ components and the Tailwind stylesheet
+    cmds:
+      - templ generate
+      - tailwindcss -i internal/web/styles/input.css -o internal/web/static/app.css --minify
