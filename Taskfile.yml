@@ -1,0 +1,30 @@
+version: "3"
+
+vars:
+  MIGRATIONS_DIR: "file://internal/store/migrations?format=golang-migrate"
+  DEV_DB_URL: "sqlite://dev?mode=memory"
+
+tasks:
+  test:
+    desc: Run all Go tests
+    cmds:
+      - go test ./...
+
+  migrate:diff:
+    desc: Generate a migration from internal/store/schema.sql (usage task migrate:diff NAME=add_foo)
+    requires:
+      vars: [NAME]
+    cmds:
+      - atlas migrate diff {{.NAME}} --dir "{{.MIGRATIONS_DIR}}" --to file://internal/store/schema.sql --dev-url "{{.DEV_DB_URL}}"
+
+  migrate:check:
+    desc: Verify migration integrity (atlas.sum) and that migrations match schema.sql
+    cmds:
+      - atlas migrate validate --dir "{{.MIGRATIONS_DIR}}" --dev-url "{{.DEV_DB_URL}}"
+      - |
+        out=$(atlas schema diff --from "{{.MIGRATIONS_DIR}}" --to file://internal/store/schema.sql --dev-url "{{.DEV_DB_URL}}" 2>/dev/null)
+        if ! echo "$out" | grep -q "Schemas are synced"; then
+          echo "schema.sql and migrations differ; run: task migrate:diff NAME=<name>"
+          echo "$out"
+          exit 1
+        fi
