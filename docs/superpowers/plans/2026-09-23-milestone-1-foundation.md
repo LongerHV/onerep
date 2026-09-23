@@ -36,6 +36,7 @@ The v1 spec is split into milestones. Each gets its own plan, written after the 
 - Tests use a real SQLite database. No DB mocks.
 - Config env vars (spec §15): `ONEREP_DB` (default `./onerep.db`), `ONEREP_LISTEN` (default `:8080`), `ONEREP_BASE_URL`, `ONEREP_OIDC_ISSUER`, `ONEREP_OIDC_CLIENT_ID`, `ONEREP_OIDC_CLIENT_SECRET`, `ONEREP_ENV` (`prod`|`dev`), `ONEREP_DEV_USER`, `ONEREP_AUTO_MIGRATE` (default `true`).
 - Session cookie: HttpOnly, SameSite=Lax, Secure when the base URL is https, 30-day sliding expiry (spec §11).
+- License: AGPL-3.0-only (`LICENSE`). Dependencies (Go and vendored JS) must use AGPL-compatible permissive licenses: MIT, BSD-2-Clause, BSD-3-Clause, ISC, 0BSD, Apache-2.0. CI enforces this for Go modules with `task licenses:check`. Every vendored file gets its license text next to it. The page footer links to the source code (AGPL §13).
 
 ## Review Focus
 
@@ -70,6 +71,8 @@ internal/web/static.go                 embedded /static/ handler
 internal/web/styles/input.css          Tailwind input
 internal/web/static/app.css            generated
 internal/web/static/vendor/htmx.min.js vendored htmx 2.0.11
+internal/web/static/vendor/htmx.LICENSE  htmx 0BSD license text
+cmd/onerep/kodata/third_party/         generated at image build (go-licenses), git-ignored
 internal/web/views/page.go             Page, csrfHeaders
 internal/web/views/layout.templ        Layout
 internal/web/views/pages.templ         Home, SignedOut, Error
@@ -1929,6 +1932,7 @@ Later milestones add their routes inside the protected `r.Group` in `Routes()`.
 go get github.com/a-h/templ@v0.3.1020 github.com/go-chi/chi/v5@v5.3.2
 mkdir -p internal/web/static/vendor
 curl -fsSL -o internal/web/static/vendor/htmx.min.js https://cdn.jsdelivr.net/npm/htmx.org@2.0.11/dist/htmx.min.js
+curl -fsSL -o internal/web/static/vendor/htmx.LICENSE https://cdn.jsdelivr.net/npm/htmx.org@2.0.11/LICENSE
 sha256sum internal/web/static/vendor/htmx.min.js
 ```
 
@@ -1998,6 +2002,9 @@ func TestHomeWithDevUser(t *testing.T) {
 	}
 	if !strings.Contains(html, `hx-headers="{&#34;X-CSRF-Token&#34;:`) {
 		t.Fatalf("htmx CSRF header not configured:\n%s", html)
+	}
+	if !strings.Contains(html, `href="https://github.com/LongerHV/onerep"`) {
+		t.Fatalf("source code link (AGPL section 13) missing:\n%s", html)
 	}
 }
 
@@ -2154,6 +2161,9 @@ templ Layout(p Page) {
 			<main class="mx-auto max-w-3xl px-4 py-6">
 				{ children... }
 			</main>
+			<footer class="mx-auto max-w-3xl px-4 py-6 text-sm text-zinc-500">
+				<a href="https://github.com/LongerHV/onerep" class="underline">onerep</a> is free software under the AGPL-3.0.
+			</footer>
 		</body>
 	</html>
 }
@@ -2581,6 +2591,7 @@ git commit -m "feat: add onerep command with serve, migrate and backup"
 
 **Files:**
 - Create: `dev/dex.yaml`, `.air.toml`, `.ko.yaml`, `.golangci.yml`
+- Modify: `flake.nix` (add `go-licenses`), `.gitignore` (add `/cmd/onerep/kodata/`)
 - Replace: `Taskfile.yml` (final version)
 - Create: `.github/workflows/ci.yml`, `.github/workflows/release.yml`
 - Create: `deploy/compose.yaml`, `README.md`
@@ -2692,7 +2703,14 @@ formatters:
         - github.com/LongerHV/onerep
 ```
 
-- [ ] **Step 3: Final Taskfile**
+- [ ] **Step 3: Add go-licenses to the dev shell and ignore generated license data**
+
+In `flake.nix`, add `go-licenses` to the `packages` list after `golangci-lint`, then re-enter the shell (`exit`, then `nix develop`, or let direnv reload). Append `/cmd/onerep/kodata/` to `.gitignore`.
+
+Run: `go-licenses --help | head -1`
+Expected: go-licenses usage text.
+
+- [ ] **Step 3b: Final Taskfile**
 
 Replace `Taskfile.yml` with:
 ```yaml
@@ -2782,6 +2800,17 @@ tasks:
           exit 1
         fi
 
+  licenses:check:
+    desc: Fail if a Go dependency of the binary has a license incompatible with AGPL-3.0
+    cmds:
+      - go-licenses check ./cmd/onerep --allowed_licenses=MIT,BSD-2-Clause,BSD-3-Clause,ISC,0BSD,Apache-2.0
+
+  licenses:
+    desc: Collect dependency license texts into the image data dir (cmd/onerep/kodata/third_party)
+    cmds:
+      - rm -rf cmd/onerep/kodata/third_party
+      - go-licenses save ./cmd/onerep --save_path cmd/onerep/kodata/third_party
+
   ci:
     desc: Everything CI checks (except the image build)
     cmds:
@@ -2789,9 +2818,11 @@ tasks:
       - task: lint
       - task: test
       - task: migrate:check
+      - task: licenses:check
 
   image:
     desc: Build the container image locally without pushing
+    deps: [licenses]
     cmds:
       - KO_DOCKER_REPO=ko.local ko build --bare --push=false ./cmd/onerep
 ```
@@ -2867,6 +2898,7 @@ jobs:
       - uses: cachix/install-nix-action@v31
         with:
           github_access_token: ${{ secrets.GITHUB_TOKEN }}
+      - run: nix develop --command task licenses
       - run: nix develop --command ko build --bare --push=false ./cmd/onerep
         env:
           KO_DOCKER_REPO: example.invalid/onerep
@@ -2914,6 +2946,7 @@ jobs:
           else
             tags="edge,sha-${GITHUB_SHA::7}"
           fi
+          nix develop --command task licenses
           echo "$GITHUB_TOKEN" | nix develop --command ko login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
           nix develop --command ko build --bare --tags "$tags" ./cmd/onerep
 ```
@@ -2985,6 +3018,12 @@ provider. See `deploy/compose.yaml` for a compose example.
 Commands: `onerep serve` (default), `onerep migrate`, `onerep backup <path>`.
 For continuous backups, run [Litestream](https://litestream.io) next to the database.
 
+## License
+
+onerep is licensed under the [GNU Affero General Public License v3.0](LICENSE).
+Third-party license texts ship in the container image under
+`/var/run/ko/third_party`.
+
 ## Develop
 
 ```sh
@@ -2999,7 +3038,7 @@ task ci              # what CI runs
 - [ ] **Step 10: Commit**
 
 ```bash
-git add dev .air.toml .ko.yaml .golangci.yml Taskfile.yml .github deploy README.md
+git add flake.nix .gitignore dev .air.toml .ko.yaml .golangci.yml Taskfile.yml .github deploy README.md
 git commit -m "chore: add dev tooling, container image build and CI workflows"
 ```
 
