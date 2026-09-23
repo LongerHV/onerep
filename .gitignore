@@ -1,0 +1,6 @@
+/result
+/.direnv/
+/bin/
+*.db
+*.db-shm
+*.db-wal
