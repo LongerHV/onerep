@@ -249,3 +249,43 @@ func TestCompareRepeatedDayNames(t *testing.T) {
 		t.Fatalf("changed days = %+v", cmp.Days)
 	}
 }
+
+// The plan's name is the active version's name: drafts (from the editor or,
+// later, the AI) must not rename a plan the user is training.
+func TestPlanNameFollowsTheActiveVersion(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	named := func(name string) []byte {
+		return []byte(strings.Replace(string(weeksDoc(2)), `"name": "Test"`, `"name": "`+name+`"`, 1))
+	}
+	p, v1, err := e.svc.Create(ctx, e.alice, named("Block A"), SaveActivate, "web", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	name := func() string {
+		got, _, err := e.svc.Plan(ctx, e.alice, p.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return got.Name
+	}
+	draft, _, err := e.svc.Save(ctx, e.alice, p.ID, named("Block B idea"), SaveDraft, "mcp", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n := name(); n != "Block A" {
+		t.Fatalf("a draft renamed the plan to %q", n)
+	}
+	if _, err := e.svc.Activate(ctx, e.alice, draft.ID); err != nil {
+		t.Fatal(err)
+	}
+	if n := name(); n != "Block B idea" {
+		t.Fatalf("after activating the draft: %q", n)
+	}
+	if _, err := e.svc.Activate(ctx, e.alice, v1.ID); err != nil {
+		t.Fatal(err)
+	}
+	if n := name(); n != "Block A" {
+		t.Fatalf("after rolling back: %q", n)
+	}
+}

@@ -22,15 +22,18 @@ func TestPlanVersions(t *testing.T) {
 	if err != nil || v2.Version != 2 {
 		t.Fatalf("v2 = %+v, %v", v2, err)
 	}
-	if got, _ := db.PlanByID(ctx, alice.ID, p.ID); got.Name != "PPL v2" {
-		t.Fatalf("plan not renamed: %q", got.Name)
+	if got, _ := db.PlanByID(ctx, alice.ID, p.ID); got.Name != "PPL" {
+		t.Fatalf("a draft renamed the plan: %q", got.Name)
 	}
 	if active, _ := db.ActivePlanVersion(ctx, alice.ID, p.ID); active.ID != v1.ID {
 		t.Fatal("a draft must not replace the active version")
 	}
 
-	if err := db.ActivateVersion(ctx, alice.ID, v2.ID); err != nil {
+	if err := db.ActivateVersion(ctx, alice.ID, v2.ID, "PPL v2"); err != nil {
 		t.Fatal(err)
+	}
+	if got, _ := db.PlanByID(ctx, alice.ID, p.ID); got.Name != "PPL v2" {
+		t.Fatalf("activation did not rename the plan: %q", got.Name)
 	}
 	vs, err := db.PlanVersions(ctx, alice.ID, p.ID)
 	if err != nil || len(vs) != 2 || vs[0].Status != PlanActive || vs[1].Status != PlanSuperseded || string(vs[0].Doc) != `{"v":2}` {
@@ -47,7 +50,7 @@ func TestPlanVersions(t *testing.T) {
 	}
 
 	// Rolling back to an older version is allowed.
-	if err := db.ActivateVersion(ctx, alice.ID, v1.ID); err != nil {
+	if err := db.ActivateVersion(ctx, alice.ID, v1.ID, "PPL"); err != nil {
 		t.Fatal(err)
 	}
 	if active, _ := db.ActivePlanVersion(ctx, alice.ID, p.ID); active.ID != v1.ID {
@@ -61,7 +64,7 @@ func TestPlanVersions(t *testing.T) {
 	if _, err := db.SavePlanVersion(ctx, bob.ID, p.ID, "x", []byte(`{}`), PlanDraft, "web", ""); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("bob saves into alice's plan: %v", err)
 	}
-	if err := db.ActivateVersion(ctx, bob.ID, v2.ID); !errors.Is(err, ErrNotFound) {
+	if err := db.ActivateVersion(ctx, bob.ID, v2.ID, "x"); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("bob activates alice's version: %v", err)
 	}
 	if vs, _ := db.PlanVersions(ctx, bob.ID, p.ID); len(vs) != 0 {

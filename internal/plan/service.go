@@ -31,7 +31,7 @@ type Store interface {
 	PlanVersions(ctx context.Context, userID, planID string) ([]store.PlanVersion, error)
 	PlanVersionByID(ctx context.Context, userID, versionID string) (store.PlanVersion, error)
 	ActivePlanVersion(ctx context.Context, userID, planID string) (store.PlanVersion, error)
-	ActivateVersion(ctx context.Context, userID, versionID string) error
+	ActivateVersion(ctx context.Context, userID, versionID, name string) error
 	DeleteDraft(ctx context.Context, userID, versionID string) error
 	ActivePlan(ctx context.Context, userID string) (store.ActivePlan, error)
 	SetActivePlan(ctx context.Context, userID string, a store.ActivePlan) error
@@ -264,7 +264,7 @@ func (s *Service) Activate(ctx context.Context, user store.User, versionID strin
 	if err != nil {
 		return false, err
 	}
-	if err := s.Store.ActivateVersion(ctx, user.ID, versionID); err != nil {
+	if err := s.Store.ActivateVersion(ctx, user.ID, versionID, doc.Name); err != nil {
 		return false, err
 	}
 	return s.fitCursor(ctx, user, v.PlanID, doc)

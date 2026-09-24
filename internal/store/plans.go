@@ -94,12 +94,14 @@ func (db *DB) CreatePlan(ctx context.Context, userID, name string, doc []byte, s
 	return p, v, err
 }
 
-// SavePlanVersion adds the next version of the user's plan and renames the
-// plan to name. Saving as active supersedes the current active version.
+// SavePlanVersion adds the next version of the user's plan. Saving as active
+// supersedes the current active version and renames the plan to name; a
+// draft leaves the name alone (the plan is named after its active version).
 func (db *DB) SavePlanVersion(ctx context.Context, userID, planID, name string, doc []byte, status, source, note string) (PlanVersion, error) {
 	var v PlanVersion
 	err := db.tx(ctx, func(tx *sql.Tx) error {
-		res, err := tx.ExecContext(ctx, `UPDATE plans SET name = ? WHERE id = ? AND user_id = ?`, name, planID, userID)
+		res, err := tx.ExecContext(ctx, `UPDATE plans SET name = CASE WHEN ? THEN ? ELSE name END WHERE id = ? AND user_id = ?`,
+			status == PlanActive, name, planID, userID)
 		if err != nil {
 			return err
 		}
@@ -193,8 +195,8 @@ func (db *DB) ActivePlanVersion(ctx context.Context, userID, planID string) (Pla
 }
 
 // ActivateVersion makes a draft (or an older superseded version) the plan's
-// active version.
-func (db *DB) ActivateVersion(ctx context.Context, userID, versionID string) error {
+// active version and renames the plan to name, the version's document name.
+func (db *DB) ActivateVersion(ctx context.Context, userID, versionID, name string) error {
 	return db.tx(ctx, func(tx *sql.Tx) error {
 		var planID string
 		err := tx.QueryRowContext(ctx, `SELECT v.plan_id FROM plan_versions v JOIN plans p ON p.id = v.plan_id
@@ -209,7 +211,10 @@ func (db *DB) ActivateVersion(ctx context.Context, userID, versionID string) err
 			WHERE plan_id = ? AND status = 'active' AND id != ?`, planID, versionID); err != nil {
 			return err
 		}
-		_, err = tx.ExecContext(ctx, `UPDATE plan_versions SET status = 'active' WHERE id = ?`, versionID)
+		if _, err := tx.ExecContext(ctx, `UPDATE plan_versions SET status = 'active' WHERE id = ?`, versionID); err != nil {
+			return err
+		}
+		_, err = tx.ExecContext(ctx, `UPDATE plans SET name = ? WHERE id = ?`, name, planID)
 		return err
 	})
 }
