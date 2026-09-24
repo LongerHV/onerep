@@ -145,3 +145,16 @@ func TestDraftKeepsKeyOrder(t *testing.T) {
 		t.Fatalf("stored doc reordered: %.120s", v.Doc)
 	}
 }
+
+// Plan weights are in the plan's unit, which defaults to the user's. Tool
+// weights are kg, so the AI is told to always name the unit, and the example
+// does, or a lb user could get 100 lb where the AI meant 100 kg.
+func TestGuideAsksForTheUnit(t *testing.T) {
+	_, example, _ := strings.Cut(planFormat, "## Example")
+	if !strings.Contains(example, `"unit": "kg"`) {
+		t.Error("the guide's example doesn't set the unit")
+	}
+	if !strings.Contains(instructions, `"unit"`) || !strings.Contains(planFormat, `Always set "unit"`) {
+		t.Error("the instructions and the guide must tell the AI to set the plan's unit")
+	}
+}

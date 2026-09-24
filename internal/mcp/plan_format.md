@@ -12,6 +12,8 @@ plan: name, unit ("kg" or "lb", defaults to the user's unit), weeks (1-52), days
         set line: kind?, count, reps | duration_s, load?, rpe?
 ```
 
+Always set "unit" (usually "kg", to match the tools): absolute `weight` loads are in the plan's unit, and without one it defaults to the user's preferred unit, so 100 could mean 100 lb.
+
 Days are done in order each week. Exercise slugs must exist for the user: find them with `list_exercises`, and only create one with `create_exercise` when nothing fits.
 
 ## Values per week
@@ -53,7 +55,7 @@ A group with one exercise is a straight-set block: `rest_s` applies between its 
 
 - no ids: a new plan with its first draft version
 - `plan_id`: a new draft version of that plan (use this for the next block of a plan they follow)
-- `version_id`: replaces that draft (only drafts; active and old versions never change)
+- `version_id`: replaces that draft (only drafts you saved; active versions, old versions and drafts the user wrote never change)
 
 Every save returns a `review_url`. The lifter opens it to compare the draft with the active version, week by week with resolved loads, and activates or discards it. Always give them that link, and a short note on what changed (also pass it as `note`).
 
@@ -62,6 +64,7 @@ Every save returns a `review_url`. The lifter opens it to compare the draft with
 ```json
 {
   "name": "Upper/Lower starter",
+  "unit": "kg",
   "weeks": 4,
   "days": [
     {"name": "Upper", "groups": [

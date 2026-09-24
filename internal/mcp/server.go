@@ -26,7 +26,7 @@ import (
 
 const instructions = `onerep is the user's gym training log. Weights are always in kilograms (fields ending in _kg); tools that show weights also give the user's preferred unit, so talk to them in it.
 You can read their sessions and stats, search and create exercises, set training maxes, and write training plan drafts. You cannot change logged workouts or activate plans: after save_plan_draft, send the user the review_url so they can compare and activate the draft themselves.
-Before writing a plan, call get_plan_schema and use exercise slugs from list_exercises.`
+Before writing a plan, call get_plan_schema and use exercise slugs from list_exercises. Always set "unit" in plan documents: absolute weights in a plan are in its unit, which otherwise defaults to the user's (possibly lb).`
 
 type Server struct {
 	Users interface {
