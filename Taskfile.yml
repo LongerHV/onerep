@@ -22,6 +22,11 @@ tasks:
     cmds:
       - go test ./...
 
+  test:js:
+    desc: Run the browser JS tests (shared calc vectors) with Node
+    cmds:
+      - node --test "internal/web/jstest/*.test.mjs"
+
   lint:
     desc: Run golangci-lint
     cmds:
@@ -102,6 +107,7 @@ tasks:
       - task: check:generated
       - task: lint
       - task: test
+      - task: test:js
       - task: migrate:check
       - task: licenses:check
 
