@@ -402,3 +402,16 @@ func TestBootstrapPRs(t *testing.T) {
 		t.Fatalf("the session's own sets leaked into its PR table: %v", got)
 	}
 }
+func TestSessionsFilter(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	s, _ := e.svc.StartAdHoc(ctx, e.alice)
+	_, _ = e.svc.ApplyOps(ctx, e.alice, []Op{setOp("01900000-0000-7000-8000-00000000002a", s.ID, "barbell-back-squat", 100, 5, 8, time.Now().UTC())})
+	got, err := e.svc.Sessions(ctx, e.alice, store.SessionFilter{})
+	if err != nil || len(got) != 1 || len(got[0].Slugs) != 1 {
+		t.Fatalf("sessions = %+v, %v", got, err)
+	}
+	if none, _ := e.svc.Sessions(ctx, e.bob, store.SessionFilter{}); len(none) != 0 {
+		t.Fatalf("bob sees %d sessions", len(none))
+	}
+}

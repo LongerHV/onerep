@@ -67,6 +67,9 @@ func TestExerciseStats(t *testing.T) {
 	if st.Exercise.Slug != "barbell-back-squat" || len(st.Series) != 1 || !st.Series[0].RPEBased || st.Series[0].E1RMKg != 123.5 {
 		t.Fatalf("stats = %+v", st)
 	}
+	if p := st.Series[0]; p.WeightKg != 100 || p.Reps != 5 || p.RPE == nil || *p.RPE != 8 {
+		t.Fatalf("best set of the point = %+v", p)
+	}
 	if len(st.RepMaxes) != 2 || st.RepMaxes[0].Reps != 1 || st.RepMaxes[1].Reps != 5 {
 		t.Fatalf("rep maxes = %+v, want reps 1 and 5 only", st.RepMaxes)
 	}

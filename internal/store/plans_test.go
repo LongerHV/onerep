@@ -119,3 +119,29 @@ func TestActivePlanCursor(t *testing.T) {
 		t.Fatal("cleared plan still active")
 	}
 }
+func TestUpdateDraftVersion(t *testing.T) {
+	db := newTestDB(t)
+	ctx := context.Background()
+	u, other := newUser(t, db, "u"), newUser(t, db, "other")
+	p, active, err := db.CreatePlan(ctx, u.ID, "P", []byte(`{"v":1}`), PlanActive, "web", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	draft, err := db.SavePlanVersion(ctx, u.ID, p.ID, "P", []byte(`{"v":2}`), PlanDraft, "web", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := db.UpdateDraftVersion(ctx, u.ID, draft.ID, []byte(`{"v":3}`), "mcp", "tweaked")
+	if err != nil || string(got.Doc) != `{"v":3}` || got.Source != "mcp" || got.Note != "tweaked" || got.Version != draft.Version || got.Status != PlanDraft {
+		t.Fatalf("updated = %+v, %v", got, err)
+	}
+	if _, err := db.UpdateDraftVersion(ctx, u.ID, active.ID, []byte(`{}`), "mcp", ""); !errors.Is(err, ErrNotDraft) {
+		t.Fatalf("updating the active version: %v", err)
+	}
+	if v, _ := db.PlanVersionByID(ctx, u.ID, active.ID); string(v.Doc) != `{"v":1}` {
+		t.Fatalf("active version changed: %s", v.Doc)
+	}
+	if _, err := db.UpdateDraftVersion(ctx, other.ID, draft.ID, []byte(`{}`), "mcp", ""); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("another user's draft: %v", err)
+	}
+}

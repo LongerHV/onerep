@@ -37,6 +37,7 @@ type Store interface {
 	ActivePlan(ctx context.Context, userID string) (store.ActivePlan, error)
 	SetActivePlan(ctx context.Context, userID string, a store.ActivePlan) error
 	ClearActivePlan(ctx context.Context, userID string) error
+	UpdateDraftVersion(ctx context.Context, userID, versionID string, doc []byte, source, note string) (store.PlanVersion, error)
 }
 
 // Exercises is what plans need from the catalog. *exercise.Service implements it.
@@ -571,4 +572,54 @@ func (s *Service) AdvanceFrom(ctx context.Context, user store.User, planID strin
 	}
 	w, d := NextPosition(doc, week, day)
 	return s.Store.SetActivePlan(ctx, user.ID, store.ActivePlan{PlanID: planID, Week: w, Day: d})
+}
+
+// DraftInput is a plan document saved as a draft: a new plan (no ids), a new
+// version of PlanID, or a replacement for the draft VersionID.
+type DraftInput struct {
+	PlanID, VersionID string
+	Doc               []byte
+	Source, Note      string
+}
+
+// Draft is a saved draft and the warnings its document produced.
+type Draft struct {
+	Plan     store.Plan
+	Version  store.PlanVersion
+	Warnings Problems
+}
+
+// SaveDraft stores a draft without ever activating it (spec §10, used by MCP).
+// Invalid documents return Problems; replacing a non-draft returns store.ErrNotDraft.
+func (s *Service) SaveDraft(ctx context.Context, user store.User, in DraftInput) (Draft, error) {
+	doc, ps := s.Validate(ctx, user, in.Doc)
+	if ps.HasErrors() {
+		return Draft{}, ps
+	}
+	raw := pinUnit(in.Doc, doc, user.Unit)
+	var d Draft
+	var err error
+	switch {
+	case in.VersionID != "":
+		d.Version, err = s.Store.UpdateDraftVersion(ctx, user.ID, in.VersionID, raw, in.Source, in.Note)
+		if err == nil {
+			d.Plan, err = s.Store.PlanByID(ctx, user.ID, d.Version.PlanID)
+		}
+	case in.PlanID != "":
+		d.Version, err = s.Store.SavePlanVersion(ctx, user.ID, in.PlanID, doc.Name, raw, SaveDraft, in.Source, in.Note)
+		if err == nil {
+			d.Plan, err = s.Store.PlanByID(ctx, user.ID, in.PlanID)
+		}
+	default:
+		d.Plan, d.Version, err = s.Store.CreatePlan(ctx, user.ID, doc.Name, raw, SaveDraft, in.Source, in.Note)
+	}
+	if err != nil {
+		return Draft{}, err
+	}
+	for _, p := range ps {
+		if p.Warning {
+			d.Warnings = append(d.Warnings, p)
+		}
+	}
+	return d, nil
 }

@@ -81,3 +81,12 @@ func (s *Service) Finish(ctx context.Context, user store.User, sessionID string)
 func (s *Service) Delete(ctx context.Context, user store.User, sessionID string) error {
 	return s.Store.DeleteSession(ctx, user.ID, sessionID)
 }
+
+// Sessions lists the user's sessions matching f, newest first (limit 20 by default, at most 100).
+func (s *Service) Sessions(ctx context.Context, user store.User, f store.SessionFilter) ([]store.SessionSummary, error) {
+	if f.Limit <= 0 {
+		f.Limit = 20
+	}
+	f.Limit = min(f.Limit, 100)
+	return s.Store.SearchSessions(ctx, user.ID, f)
+}

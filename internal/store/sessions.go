@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"strings"
 	"time"
 )
 
@@ -123,7 +124,8 @@ func (db *DB) OpenSession(ctx context.Context, userID string) (Session, error) {
 // SessionSummary is a session as listed in the history.
 type SessionSummary struct {
 	Session
-	Sets int
+	Sets  int
+	Slugs []string // exercises done, in order (SearchSessions only)
 }
 
 // ListSessions returns sessions newest first.
@@ -386,4 +388,60 @@ func (db *DB) FinishSession(ctx context.Context, userID, sessionID string, at ti
 		}
 		return Applied, nil
 	})
+}
+
+// SessionFilter narrows SearchSessions. Zero times are unbounded.
+type SessionFilter struct {
+	From, To time.Time // started_at in [From, To)
+	Slug     string    // only sessions with a (non-deleted) set of this exercise
+	Limit    int
+}
+
+// SearchSessions returns the user's sessions matching f, newest first, with
+// the exercises each one included.
+func (db *DB) SearchSessions(ctx context.Context, userID string, f SessionFilter) ([]SessionSummary, error) {
+	from, to := "", "9999"
+	if !f.From.IsZero() {
+		from = formatTime(f.From)
+	}
+	if !f.To.IsZero() {
+		to = formatTime(f.To)
+	}
+	rows, err := db.read.QueryContext(ctx, `SELECT `+sessionColumns+`,
+		(SELECT count(*) FROM sets WHERE sets.session_id = sessions.id AND deleted_at IS NULL),
+		coalesce((SELECT group_concat(slug, ',') FROM (SELECT slug FROM sets
+			WHERE sets.session_id = sessions.id AND deleted_at IS NULL
+			GROUP BY slug ORDER BY min(group_pos), min(exercise_pos), min(done_at))), '')
+		FROM sessions WHERE user_id = ? AND started_at >= ? AND started_at < ?
+			AND (? = '' OR EXISTS (SELECT 1 FROM sets WHERE sets.session_id = sessions.id AND slug = ? AND deleted_at IS NULL))
+		ORDER BY started_at DESC, id DESC LIMIT ?`, userID, from, to, f.Slug, f.Slug, f.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []SessionSummary
+	for rows.Next() {
+		var sum SessionSummary
+		var snapshot, started, updated, slugs string
+		var finished sql.NullString
+		if err := rows.Scan(&sum.ID, &sum.UserID, &sum.PlanID, &sum.PlanVersionID, &sum.Week, &sum.Day, &sum.Name,
+			&snapshot, &started, &finished, &sum.Notes, &updated, &sum.Sets, &slugs); err != nil {
+			return nil, err
+		}
+		sum.Snapshot = []byte(snapshot)
+		if sum.StartedAt, err = parseTime(started); err != nil {
+			return nil, err
+		}
+		if sum.FinishedAt, err = parseNullTime(finished); err != nil {
+			return nil, err
+		}
+		if sum.UpdatedAt, err = parseTime(updated); err != nil {
+			return nil, err
+		}
+		if slugs != "" {
+			sum.Slugs = strings.Split(slugs, ",")
+		}
+		out = append(out, sum)
+	}
+	return out, rows.Err()
 }

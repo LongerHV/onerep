@@ -347,3 +347,32 @@ func TestAdvanceFrom(t *testing.T) {
 		t.Fatal("another plan's session moved the cursor")
 	}
 }
+func TestSaveDraftNeverTouchesActiveVersions(t *testing.T) {
+	e := newEnv(t)
+	ctx, svc, user := context.Background(), e.svc, e.alice
+	doc := func(name string) []byte {
+		return []byte(`{"name":"` + name + `","weeks":1,"days":[{"name":"D","groups":[{"exercises":[{"slug":"barbell-back-squat","sets":[{"count":3,"reps":5}]}]}]}]}`)
+	}
+	d, err := svc.SaveDraft(ctx, user, DraftInput{Doc: doc("New"), Source: "mcp"})
+	if err != nil || d.Version.Status != store.PlanDraft || d.Version.Source != "mcp" || d.Plan.Name != "New" {
+		t.Fatalf("new plan draft = %+v, %v", d, err)
+	}
+	d2, err := svc.SaveDraft(ctx, user, DraftInput{PlanID: d.Plan.ID, Doc: doc("New v2"), Source: "mcp", Note: "heavier"})
+	if err != nil || d2.Version.Version != 2 || d2.Version.Status != store.PlanDraft {
+		t.Fatalf("second draft = %+v, %v", d2, err)
+	}
+	d3, err := svc.SaveDraft(ctx, user, DraftInput{VersionID: d2.Version.ID, Doc: doc("New v2b"), Source: "mcp"})
+	if err != nil || d3.Version.ID != d2.Version.ID || !strings.Contains(string(d3.Version.Doc), "New v2b") {
+		t.Fatalf("replaced draft = %+v, %v", d3, err)
+	}
+	if _, err := svc.Activate(ctx, user, d3.Version.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.SaveDraft(ctx, user, DraftInput{VersionID: d3.Version.ID, Doc: doc("Sneaky"), Source: "mcp"}); !errors.Is(err, store.ErrNotDraft) {
+		t.Fatalf("replacing the active version: %v", err)
+	}
+	var ps Problems
+	if _, err := svc.SaveDraft(ctx, user, DraftInput{Doc: []byte(`{"name":"x"}`), Source: "mcp"}); !errors.As(err, &ps) || !ps.HasErrors() {
+		t.Fatalf("invalid doc: %v", err)
+	}
+}

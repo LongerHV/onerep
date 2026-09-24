@@ -24,6 +24,7 @@ type Store interface {
 	SessionByID(ctx context.Context, userID, id string) (store.Session, error)
 	OpenSession(ctx context.Context, userID string) (store.Session, error)
 	ListSessions(ctx context.Context, userID string, limit, offset int) ([]store.SessionSummary, error)
+	SearchSessions(ctx context.Context, userID string, f store.SessionFilter) ([]store.SessionSummary, error)
 	DeleteSession(ctx context.Context, userID, id string) error
 	SessionSets(ctx context.Context, userID, sessionID string) ([]store.Set, error)
 	LastSets(ctx context.Context, userID, slug, excludeSessionID string) ([]store.Set, error)

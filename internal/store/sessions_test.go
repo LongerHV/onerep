@@ -170,3 +170,39 @@ func TestOpIDsArePerUser(t *testing.T) {
 		t.Fatalf("bob: %v %v", out, err)
 	}
 }
+func TestSearchSessions(t *testing.T) {
+	db := newTestDB(t)
+	ctx := context.Background()
+	u := newUser(t, db, "u")
+	a := newSession(t, db, u.ID, "a")
+	_, _ = db.UpsertSet(ctx, u.ID, set(a.ID, "s1", 100, t0), "") // squat
+	curl := set(a.ID, "s2", 12, t0.Add(time.Minute))
+	curl.Slug, curl.GroupPos = "dumbbell-curl", 1
+	_, _ = db.UpsertSet(ctx, u.ID, curl, "")
+	b := newSession(t, db, u.ID, "b")
+	_, _ = db.UpsertSet(ctx, u.ID, set(b.ID, "s3", 105, t0), "")
+	_, _ = db.DeleteSet(ctx, u.ID, b.ID, "s3", t0.Add(time.Minute), "")
+	other := newUser(t, db, "other")
+	newSession(t, db, other.ID, "theirs")
+
+	all, err := db.SearchSessions(ctx, u.ID, SessionFilter{Limit: 10})
+	if err != nil || len(all) != 2 || all[0].Name != "b" {
+		t.Fatalf("all = %+v, %v", all, err)
+	}
+	if got := all[1].Slugs; len(got) != 2 || got[0] != "barbell-back-squat" || got[1] != "dumbbell-curl" || all[1].Sets != 2 {
+		t.Fatalf("session a summary = %+v", all[1])
+	}
+	squat, _ := db.SearchSessions(ctx, u.ID, SessionFilter{Slug: "barbell-back-squat", Limit: 10})
+	if len(squat) != 1 || squat[0].Name != "a" {
+		t.Fatalf("squat sessions = %+v (deleted sets must not match)", squat)
+	}
+	future, _ := db.SearchSessions(ctx, u.ID, SessionFilter{From: time.Now().Add(time.Hour), Limit: 10})
+	past, _ := db.SearchSessions(ctx, u.ID, SessionFilter{To: time.Now().Add(-time.Hour), Limit: 10})
+	if len(future) != 0 || len(past) != 0 {
+		t.Fatalf("date filters: future %d, past %d", len(future), len(past))
+	}
+	one, _ := db.SearchSessions(ctx, u.ID, SessionFilter{Limit: 1})
+	if len(one) != 1 {
+		t.Fatalf("limit: %d", len(one))
+	}
+}

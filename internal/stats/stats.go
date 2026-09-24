@@ -49,7 +49,10 @@ type Point struct {
 	SessionID string
 	DoneAt    time.Time
 	E1RMKg    float64
-	RPEBased  bool // from the RTS table; otherwise estimated from reps
+	RPEBased  bool    // from the RTS table; otherwise estimated from reps
+	WeightKg  float64 // the best set of the session
+	Reps      int
+	RPE       *float64
 }
 
 // ExerciseStats is what the exercise page (and the AI) shows about progress.
@@ -71,7 +74,8 @@ func (s *Service) ExerciseStats(ctx context.Context, user store.User, slug strin
 		return st, err
 	}
 	for _, p := range points {
-		st.Series = append(st.Series, Point{SessionID: p.SessionID, DoneAt: p.DoneAt, E1RMKg: p.E1RMKg, RPEBased: isRPEBased(p)})
+		st.Series = append(st.Series, Point{SessionID: p.SessionID, DoneAt: p.DoneAt, E1RMKg: p.E1RMKg, RPEBased: isRPEBased(p),
+			WeightKg: p.WeightKg, Reps: p.Reps, RPE: p.RPE})
 	}
 	maxes, err := s.Store.RepMaxes(ctx, user.ID, slug, "")
 	if err != nil {
