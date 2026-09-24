@@ -108,22 +108,18 @@ function roundBarbell(t, unit, c) {
   const n = plates.length;
   const reach = Array.from({ length: n + 1 }, () => new Uint8Array(side + 1));
   reach[n][0] = 1;
+  // used[s] is the fewest plates of the current size needed to reach s,
+  // which keeps limited sizes O(side) instead of O(side * pairs).
+  const used = new Int32Array(side + 1);
   for (let i = n - 1; i >= 0; i--) {
     const p = plates[i];
     for (let s = 0; s <= side; s++) {
       if (reach[i + 1][s]) {
         reach[i][s] = 1;
-        continue;
-      }
-      if (p.max < 0) {
-        reach[i][s] = s >= p.size && reach[i][s - p.size] ? 1 : 0;
-        continue;
-      }
-      for (let k = 1; k <= p.max && k * p.size <= s; k++) {
-        if (reach[i + 1][s - k * p.size]) {
-          reach[i][s] = 1;
-          break;
-        }
+        used[s] = 0;
+      } else if (s >= p.size && reach[i][s - p.size] && (p.max < 0 || used[s - p.size] < p.max)) {
+        reach[i][s] = 1;
+        used[s] = used[s - p.size] + 1;
       }
     }
   }

@@ -56,3 +56,16 @@ test("absurd targets stay bounded", () => {
   assert.ok(near(round(1e9, bar, "kg").kg, 2020));
   assert.equal(round(NaN, null, "kg").kg, 0);
 });
+
+test("many limited plate sizes stay fast", () => {
+  const plates = [];
+  const pairs = {};
+  for (let i = 1; i <= 30; i++) {
+    plates.push(i / 100);
+    pairs[String(i / 100)] = 1000;
+  }
+  const start = performance.now();
+  round(2250, { kind: "barbell", unit: "kg", config: { bar: 20, plates, plate_pairs: pairs } }, "kg");
+  const ms = performance.now() - start;
+  assert.ok(ms < 200, `round took ${ms} ms`);
+});

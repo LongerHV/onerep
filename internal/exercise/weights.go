@@ -9,6 +9,9 @@ import (
 	"strings"
 )
 
+// maxParsedValues bounds how much a weight list may expand to.
+const maxParsedValues = 1000
+
 // ParseWeights parses a comma-separated weight list where "a-b/s" expands to
 // a, a+s, ... up to b. "2-10/2, 12.5" gives [2 4 6 8 10 12.5]. The result is
 // sorted and de-duplicated.
@@ -40,6 +43,9 @@ func ParseWeights(s string) ([]float64, error) {
 				}
 				out = append(out, v)
 			}
+			if len(out) > maxParsedValues {
+				return nil, fmt.Errorf("too many values (at most %d)", maxParsedValues)
+			}
 			continue
 		}
 		v, err := parsePositive(part)
@@ -47,6 +53,9 @@ func ParseWeights(s string) ([]float64, error) {
 			return nil, fmt.Errorf("%q: not a positive number", part)
 		}
 		out = append(out, v)
+		if len(out) > maxParsedValues {
+			return nil, fmt.Errorf("too many values (at most %d)", maxParsedValues)
+		}
 	}
 	sort.Float64s(out)
 	dedup := out[:0]

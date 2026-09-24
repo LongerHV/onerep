@@ -69,3 +69,10 @@ func TestFormatWeightsSortsInput(t *testing.T) {
 		t.Fatal("FormatWeights must not reorder its argument")
 	}
 }
+
+func TestParseWeightsLimitsTotalValues(t *testing.T) {
+	in := strings.Repeat("1-600/1, ", 3) // each range is fine, together they expand to 1800 values
+	if _, err := ParseWeights(in); err == nil || !strings.Contains(err.Error(), "too many values") {
+		t.Fatalf("got %v", err)
+	}
+}

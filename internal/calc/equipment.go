@@ -50,23 +50,26 @@ func (e Equipment) Validate() error {
 		return fmt.Errorf("unit must be %q or %q", UnitKg, UnitLb)
 	}
 	c := e.Config
-	positive := func(field string, vs []float64) error {
+	positive := func(field string, vs []float64, limit int) error {
 		if len(vs) == 0 {
 			return fmt.Errorf("%s: at least one value is required", field)
 		}
+		if len(vs) > limit {
+			return fmt.Errorf("%s: at most %d values", field, limit)
+		}
 		for _, v := range vs {
-			if v <= 0 {
-				return fmt.Errorf("%s: values must be positive", field)
+			if !(v >= minWeight) || math.IsInf(v, 0) {
+				return fmt.Errorf("%s: values must be positive (at least %v)", field, minWeight)
 			}
 		}
 		return nil
 	}
 	switch e.Kind {
 	case KindBarbell:
-		if c.Bar < 0 {
+		if !(c.Bar >= 0) || math.IsInf(c.Bar, 0) {
 			return errors.New("bar: must not be negative")
 		}
-		if err := positive("plates", c.Plates); err != nil {
+		if err := positive("plates", c.Plates, maxPlateSizes); err != nil {
 			return err
 		}
 		for size, n := range c.PlatePairs {
@@ -79,12 +82,12 @@ func (e Equipment) Validate() error {
 			}
 		}
 	case KindDumbbell:
-		return positive("weights", c.Weights)
+		return positive("weights", c.Weights, maxListValues)
 	case KindMachine, KindCable:
 		if len(c.Stack) > 0 {
-			return positive("stack", c.Stack)
+			return positive("stack", c.Stack, maxListValues)
 		}
-		if c.Step <= 0 || c.Min < 0 || c.Max < c.Min {
+		if !(c.Step >= minWeight) || !(c.Min >= 0) || !(c.Max >= c.Min) || math.IsInf(c.Max, 0) {
 			return errors.New("stack: give a list of weights, or min, step > 0 and max >= min")
 		}
 	case KindBodyweight:
@@ -211,22 +214,17 @@ func roundBarbell(t int64, unit string, c EquipmentConfig) Rounded {
 		reach[i] = make([]bool, side+1)
 	}
 	reach[n][0] = true
+	// used[s] is the fewest plates of the current size needed to reach s,
+	// which keeps limited sizes O(side) instead of O(side * pairs).
+	used := make([]int64, side+1)
 	for i := n - 1; i >= 0; i-- {
 		p := plates[i]
 		for s := int64(0); s <= side; s++ {
-			if reach[i+1][s] {
-				reach[i][s] = true
-				continue
-			}
-			if p.max < 0 {
-				reach[i][s] = s >= p.size && reach[i][s-p.size]
-				continue
-			}
-			for k := int64(1); k <= p.max && k*p.size <= s; k++ {
-				if reach[i+1][s-k*p.size] {
-					reach[i][s] = true
-					break
-				}
+			switch {
+			case reach[i+1][s]:
+				reach[i][s], used[s] = true, 0
+			case s >= p.size && reach[i][s-p.size] && (p.max < 0 || used[s-p.size] < p.max):
+				reach[i][s], used[s] = true, used[s-p.size]+1
 			}
 		}
 	}
@@ -253,3 +251,10 @@ func roundBarbell(t int64, unit string, c EquipmentConfig) Rounded {
 	}
 	return Rounded{Kg: ToKg(float64(bar+2*best)/100, unit), PerSide: perSide}
 }
+
+// Size limits for profiles, which are user input: they bound rounding time and memory.
+const (
+	maxPlateSizes = 30
+	maxListValues = 500
+	minWeight     = 0.01 // smallest plate, dumbbell or stack step (one cent of a unit)
+)

@@ -5,8 +5,10 @@ import (
 	"math"
 	"os"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 )
 
 type cases struct {
@@ -163,5 +165,53 @@ func TestEquipmentValidate(t *testing.T) {
 func TestUnitConversionRoundTrips(t *testing.T) {
 	if !near(FromKg(ToKg(225, UnitLb), UnitLb), 225) || ToKg(100, UnitKg) != 100 {
 		t.Fatal("conversion does not round-trip")
+	}
+}
+
+// Profiles are user input; rounding must stay fast for any profile Validate accepts.
+func TestRoundManyLimitedPlatesIsFast(t *testing.T) {
+	var plates []float64
+	pairs := map[string]int{}
+	for i := 1; i <= maxPlateSizes; i++ {
+		v := float64(i) / 100
+		plates = append(plates, v)
+		pairs[strconv.FormatFloat(v, 'f', -1, 64)] = 1000
+	}
+	eq := &Equipment{Kind: KindBarbell, Unit: UnitKg, Config: EquipmentConfig{Bar: 20, Plates: plates, PlatePairs: pairs}}
+	if err := eq.Validate(); err != nil {
+		t.Fatalf("profile should be valid: %v", err)
+	}
+	start := time.Now()
+	Round(2250, eq, UnitKg)
+	if d := time.Since(start); d > 200*time.Millisecond {
+		t.Fatalf("Round took %v", d)
+	}
+}
+
+func TestValidateBoundsProfileSize(t *testing.T) {
+	many := func(n int) []float64 {
+		vs := make([]float64, n)
+		for i := range vs {
+			vs[i] = float64(i + 1)
+		}
+		return vs
+	}
+	bad := map[string]Equipment{
+		"too many plate sizes": {KindBarbell, UnitKg, EquipmentConfig{Bar: 20, Plates: many(maxPlateSizes + 1)}},
+		"too many dumbbells":   {KindDumbbell, UnitKg, EquipmentConfig{Weights: many(maxListValues + 1)}},
+		"too many stack steps": {KindCable, UnitKg, EquipmentConfig{Stack: many(maxListValues + 1)}},
+		"plate below 0.01":     {KindBarbell, UnitKg, EquipmentConfig{Bar: 20, Plates: []float64{0.001}}},
+		"NaN plate":            {KindBarbell, UnitKg, EquipmentConfig{Bar: 20, Plates: []float64{math.NaN()}}},
+		"NaN bar":              {KindBarbell, UnitKg, EquipmentConfig{Bar: math.NaN(), Plates: []float64{25}}},
+		"tiny step":            {KindMachine, UnitKg, EquipmentConfig{Min: 5, Step: 0.001, Max: 100}},
+	}
+	for name, eq := range bad {
+		if err := eq.Validate(); err == nil {
+			t.Errorf("%s: accepted", name)
+		}
+	}
+	ok := Equipment{KindDumbbell, UnitKg, EquipmentConfig{Weights: many(maxListValues)}}
+	if err := ok.Validate(); err != nil {
+		t.Errorf("max-size dumbbell list rejected: %v", err)
 	}
 }
