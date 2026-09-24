@@ -16,6 +16,7 @@ import (
 	"github.com/LongerHV/onerep/internal/auth"
 	"github.com/LongerHV/onerep/internal/config"
 	"github.com/LongerHV/onerep/internal/exercise"
+	"github.com/LongerHV/onerep/internal/mcp"
 	"github.com/LongerHV/onerep/internal/plan"
 	"github.com/LongerHV/onerep/internal/stats"
 	"github.com/LongerHV/onerep/internal/store"
@@ -115,6 +116,8 @@ func serve(ctx context.Context, cfg config.Config) error {
 	srv.Plans = &plan.Service{Store: db, Exercises: srv.Exercises, History: db}
 	srv.Training = &training.Service{Store: db, Plans: srv.Plans, Exercises: srv.Exercises}
 	srv.Stats = &stats.Service{Store: db, Exercises: srv.Exercises}
+	srv.MCP = (&mcp.Server{Users: db, Tokens: srv.Tokens, Exercises: srv.Exercises, Plans: srv.Plans, Training: srv.Training,
+		Stats: srv.Stats, BaseURL: cfg.BaseURL}).Handler()
 	if cfg.OIDC.Issuer != "" {
 		srv.OIDC, err = auth.NewOIDC(ctx, cfg.OIDC.Issuer, cfg.OIDC.ClientID, cfg.OIDC.ClientSecret, cfg.BaseURL, sessions)
 		if err != nil {

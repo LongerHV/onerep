@@ -169,3 +169,21 @@ func TestUserNameIsHTMLEscaped(t *testing.T) {
 		t.Fatalf("escaped name missing:\n%s", html)
 	}
 }
+func TestMCPIsMountedWithoutCookiesOrCSRF(t *testing.T) {
+	db := storetest.New(t)
+	called := false
+	s := &Server{DB: db, Sessions: &auth.Sessions{Store: db}, MCP: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		called = true
+		w.WriteHeader(http.StatusTeapot)
+	})}
+	srv := httptest.NewServer(s.Routes())
+	defer srv.Close()
+	resp, err := http.Post(srv.URL+"/mcp", "application/json", strings.NewReader(`{}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if !called || resp.StatusCode != http.StatusTeapot {
+		t.Fatalf("/mcp = %d (handler called %v), want the MCP handler without CSRF", resp.StatusCode, called)
+	}
+}

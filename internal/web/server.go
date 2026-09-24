@@ -29,6 +29,7 @@ type Server struct {
 	DevUser  string     // non-empty enables the dev login bypass
 	BaseURL  string     // public URL, for links shown to users
 	Tokens   *auth.Tokens
+	MCP      http.Handler // nil disables /mcp
 
 	Exercises *exercise.Service
 	Account   *account.Service
@@ -46,6 +47,9 @@ func (s *Server) Routes() http.Handler {
 	})).ServeHTTP)
 
 	r.Get("/healthz", s.healthz)
+	if s.MCP != nil {
+		r.Handle("/mcp", http.MaxBytesHandler(s.MCP, maxBodyBytes)) // bearer-token auth, no cookies or CSRF (spec §11)
+	}
 	r.Get("/schema/plan.json", planSchema)
 	r.Get("/sw.js", serviceWorker)
 	r.With(s.layout).Get("/offline", s.offline)
