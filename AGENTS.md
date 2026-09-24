@@ -39,11 +39,12 @@ internal/auth/         OIDC, cookie sessions, CSRF, dev login bypass
 internal/account/      user preferences (unit, e1RM window)
 internal/calc/         pure training math: RTS/e1RM, rounding to equipment, load resolution
 internal/exercise/     catalog (+ embedded seed/exercises.json), equipment profiles, TM, alternatives
+internal/plan/         plan JSON Schema + validation, per-week expansion, load resolution, versions, cursor, diffs
 internal/web/          chi router, handlers, views/ (templ), static/ (embedded), jstest/ (node tests)
 testdata/calc_cases.json  shared Go/JS calc test vectors
 ```
 
-Later milestones add `plan/`, `training/`, `stats/`, and `mcp/` under `internal/`. See the spec, §4.
+Later milestones add `training/`, `stats/`, and `mcp/` under `internal/`. See the spec, §4.
 
 ## Rules
 
@@ -58,7 +59,8 @@ Later milestones add `plan/`, `training/`, `stats/`, and `mcp/` under `internal/
 - **Web handlers and MCP tools are thin adapters.** Business rules live in services so the web UI and the AI can't disagree.
 - **Calc parity:** `internal/calc` (Go) and `internal/web/static/js/calc.js` implement the same math. Change both together and add a case to `testdata/calc_cases.json`; `task test` and `task test:js` both run it.
 - **Seed catalog:** edit `internal/exercise/seed/exercises.json`; slugs are permanent (plans and history refer to them). Removing an entry hides it, never deletes it. `TestSeedIsValid` checks the file.
+- **Plan documents:** `internal/plan/plan.schema.json` is the contract for the editor, the server and the AI. Change the schema, the Go types in `internal/plan/doc.go` and the semantic checks together; `internal/plan/testdata/*.golden.json` pins expansion (`go test ./internal/plan/ -update` rewrites it, so review the diff).
 - **Every non-GET request with a session must carry the CSRF token**: the `X-CSRF-Token` header, set globally for htmx via `hx-headers`, or the `csrf_token` form field.
 - **The dev login bypass** (`ONEREP_DEV_USER`) only runs with `ONEREP_ENV=dev`, and only on authenticated app routes.
 - **Keep dependencies few.** Ask before adding a Go module or a vendored JS library.
-- **Licensing:** onerep is AGPL-3.0-only. Dependencies must use MIT, BSD-2/3-Clause, ISC, 0BSD or Apache-2.0. `task licenses:check` enforces this for Go modules. A vendored file gets its license next to it (`<name>.LICENSE`). Keep the footer link to the source code.
+- **Licensing:** onerep is AGPL-3.0-only. Dependencies must use MIT, BSD-2/3-Clause, ISC, 0BSD or Apache-2.0. `task licenses:check` enforces this for Go modules. A vendored file gets its license next to it (`<name>.LICENSE`, or `LICENSE` inside its own vendor directory). Keep the footer link to the source code.
