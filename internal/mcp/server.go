@@ -50,7 +50,10 @@ func (s *Server) Handler() http.Handler {
 	s.addTrainingTools(srv)
 	s.addPrompts(srv)
 	h := sdk.NewStreamableHTTPHandler(func(*http.Request) *sdk.Server { return srv },
-		&sdk.StreamableHTTPOptions{Stateless: true, JSONResponse: true})
+		// Requests are bearer-authenticated, which already defeats DNS rebinding (a
+		// browser can't add the token), and the localhost check would refuse every
+		// request from a reverse proxy or tunnel on the same host.
+		&sdk.StreamableHTTPOptions{Stateless: true, JSONResponse: true, DisableLocalhostProtection: true})
 	return auth.RequireBearerToken(s.verify, &auth.RequireBearerTokenOptions{AllowMissingExpiration: true, Scopes: []string{"mcp"}})(h)
 }
 

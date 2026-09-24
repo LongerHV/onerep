@@ -197,3 +197,24 @@ func TestExerciseTools(t *testing.T) {
 func (e env) Plans() *plan.Service {
 	return &plan.Service{Store: e.db, Exercises: &exercise.Service{Store: e.db}, History: e.db}
 }
+
+// Behind a reverse proxy or tunnel on the same host, requests arrive on
+// loopback with the public Host header. Bearer auth already stops DNS
+// rebinding (a browser can't add the token), so they must be served.
+func TestMCPBehindLocalProxy(t *testing.T) {
+	e := newEnv(t)
+	req, _ := http.NewRequest(http.MethodPost, e.url, strings.NewReader(
+		`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"t","version":"1"}}}`))
+	req.Host = "onerep.example.com"
+	req.Header.Set("Authorization", "Bearer "+e.aliceToken)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json, text/event-stream")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("proxied request = %d, want 200", resp.StatusCode)
+	}
+}
