@@ -147,7 +147,7 @@ func (s *Server) addPlanTools(srv *sdk.Server) {
 		})
 	tool(s, srv, &sdk.Tool{Name: "validate_plan", Description: "Check a plan document without saving it."},
 		func(ctx context.Context, u store.User, in validateIn) (validateOut, error) {
-			raw, err := docBytes(in.Doc)
+			raw, err := docBytes(ctx, in.Doc)
 			if err != nil {
 				return validateOut{}, err
 			}
@@ -156,7 +156,7 @@ func (s *Server) addPlanTools(srv *sdk.Server) {
 		})
 	tool(s, srv, &sdk.Tool{Name: "save_plan_draft", Description: "Save a plan document as a draft: a new plan, a new version of plan_id, or a replacement for the draft version_id. Drafts never take effect until the user activates them at review_url."},
 		func(ctx context.Context, u store.User, in saveDraftIn) (saveDraftOut, error) {
-			raw, err := docBytes(in.Doc)
+			raw, err := docBytes(ctx, in.Doc)
 			if err != nil {
 				return saveDraftOut{}, err
 			}

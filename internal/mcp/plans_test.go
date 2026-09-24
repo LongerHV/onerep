@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -121,5 +122,26 @@ func TestPlanFormatExampleIsValid(t *testing.T) {
 	_, ps := e.Plans().Validate(context.Background(), e.alice, []byte(example))
 	if ps.HasErrors() { // warnings (pct_tm without a training max) are fine
 		t.Fatalf("example problems: %v", ps)
+	}
+}
+
+// A plan sent as an object is stored in the client's key order, so the
+// review page's JSON diff compares like with like.
+func TestDraftKeepsKeyOrder(t *testing.T) {
+	e := newEnv(t)
+	cs := connect(t, e.url, e.aliceToken)
+	var draft struct {
+		VersionID string `json:"version_id"`
+	}
+	args := json.RawMessage(`{"doc": ` + planDoc + `}`)
+	if msg := call(t, cs, "save_plan_draft", args, &draft); msg != "" {
+		t.Fatal(msg)
+	}
+	v, err := e.Plans().Version(context.Background(), e.alice, draft.VersionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(string(v.Doc), `{"unit":"kg","name":"Block","weeks":2,"days":[{"name":"Squat day"`) {
+		t.Fatalf("stored doc reordered: %.120s", v.Doc)
 	}
 }

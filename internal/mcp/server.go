@@ -81,6 +81,7 @@ func (s *Server) user(ctx context.Context, extra *sdk.RequestExtra) (store.User,
 func tool[In, Out any](s *Server, srv *sdk.Server, t *sdk.Tool, h func(ctx context.Context, u store.User, in In) (Out, error)) {
 	sdk.AddTool(srv, t, func(ctx context.Context, req *sdk.CallToolRequest, in In) (*sdk.CallToolResult, Out, error) {
 		var zero Out
+		ctx = context.WithValue(ctx, rawArgsKey{}, req.Params.Arguments)
 		u, err := s.user(ctx, req.Extra)
 		if err != nil {
 			return nil, zero, err
@@ -136,8 +137,22 @@ func jsonValue(raw []byte) any {
 	return v
 }
 
-// docBytes accepts a plan document as a JSON object or a JSON string.
-func docBytes(doc any) ([]byte, error) {
+// rawArgsKey carries a tool call's arguments as the client sent them.
+type rawArgsKey struct{}
+
+// docBytes returns the plan document of a tool call, sent as a JSON object or
+// a JSON string. An object is taken from the raw arguments, so it keeps the
+// client's key order (a decoded map would be re-sorted, and every line of the
+// review page's JSON diff would change).
+func docBytes(ctx context.Context, doc any) ([]byte, error) {
+	if raw, ok := ctx.Value(rawArgsKey{}).(json.RawMessage); ok {
+		var args struct {
+			Doc json.RawMessage `json:"doc"`
+		}
+		if json.Unmarshal(raw, &args) == nil && len(args.Doc) > 0 && args.Doc[0] == '{' {
+			return args.Doc, nil
+		}
+	}
 	switch d := doc.(type) {
 	case nil:
 		return nil, inputError("doc is required")
