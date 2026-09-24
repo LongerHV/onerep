@@ -206,3 +206,20 @@ func TestSearchSessions(t *testing.T) {
 		t.Fatalf("limit: %d", len(one))
 	}
 }
+
+// A session keeps a given start time (imports, tests); otherwise it starts now.
+func TestCreateSessionStartTime(t *testing.T) {
+	db := newTestDB(t)
+	ctx := context.Background()
+	u := newUser(t, db, "u")
+	s, err := db.CreateSession(ctx, Session{UserID: u.ID, Name: "old", Snapshot: []byte(`{}`), StartedAt: t0})
+	if err != nil || !s.StartedAt.Equal(t0) {
+		t.Fatalf("started = %v, %v", s.StartedAt, err)
+	}
+	if got, _ := db.SessionByID(ctx, u.ID, s.ID); !got.StartedAt.Equal(t0) {
+		t.Fatalf("stored start = %v", got.StartedAt)
+	}
+	if now := newSession(t, db, u.ID, "now"); time.Since(now.StartedAt) > time.Minute {
+		t.Fatalf("default start = %v", now.StartedAt)
+	}
+}

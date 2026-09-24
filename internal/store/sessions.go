@@ -101,8 +101,11 @@ func (db *DB) CreateSession(ctx context.Context, s Session) (Session, error) {
 	if s.ID, err = newID(); err != nil {
 		return Session{}, err
 	}
-	s.StartedAt = time.Now().UTC()
-	s.UpdatedAt = s.StartedAt
+	if s.StartedAt.IsZero() {
+		s.StartedAt = time.Now()
+	}
+	s.StartedAt = s.StartedAt.UTC()
+	s.UpdatedAt = time.Now().UTC()
 	_, err = db.write.ExecContext(ctx, `INSERT INTO sessions (id, user_id, plan_id, plan_version_id, week, day, name,
 		snapshot, started_at, notes, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, '', ?)`,
 		s.ID, s.UserID, nullString(s.PlanID), nullString(s.PlanVersionID), s.Week, s.Day, s.Name, string(s.Snapshot),
