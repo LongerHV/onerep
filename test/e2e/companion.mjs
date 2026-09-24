@@ -208,6 +208,15 @@ try {
   await waitFor(() => evaluate(`!!document.querySelector('[data-chart=e1rm] canvas')`), "the e1RM chart").catch(() => {});
   check("the exercise page draws the e1RM chart", await evaluate(`!!document.querySelector('[data-chart=e1rm] canvas')`));
   check("the rep-max table lists the logged weight", await evaluate(`document.body.textContent.includes('Rep maxes') && [...document.querySelectorAll('[data-rep-max]')].some(r => r.textContent.includes('kg'))`));
+  // Back restores the page from htmx's history cache, which keeps the markup but not the canvas pixels.
+  const painted = `(() => { const c = document.querySelector('[data-chart=e1rm] canvas'); if (!c || !c.width) return false;
+    const px = c.getContext('2d').getImageData(0, 0, c.width, c.height).data; for (let i = 3; i < px.length; i += 4) if (px[i]) return true; return false; })()`;
+  await evaluate(`document.querySelector('a[href="/history"]').click()`);
+  await waitFor(() => evaluate(`location.pathname === '/history'`), "history page");
+  await evaluate("history.back()");
+  await waitFor(() => evaluate(`location.pathname === '/exercises/barbell-bench-press'`), "back to the exercise page");
+  await waitFor(() => evaluate(painted), "the chart after Back").catch(() => {});
+  check("the e1RM chart is drawn again after Back", await evaluate(painted));
   await go("/stats/muscles");
   await waitFor(() => evaluate(`!!document.querySelector('[data-chart=muscles] canvas')`), "the muscles chart").catch(() => {});
   check("the muscles page draws its chart", await evaluate(`!!document.querySelector('[data-chart=muscles] canvas')`));

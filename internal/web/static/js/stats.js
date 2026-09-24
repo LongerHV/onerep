@@ -9,6 +9,10 @@ import { e1rmData, muscleColor, stackMuscles } from "./chart-data.js";
 
 let lib; // the uPlot module, loaded on first use
 const live = new Map(); // element → { plot, observer }
+// Charts are tracked by element, not a data attribute: Back restores a page
+// from htmx's history cache as new elements with the old markup (and an
+// empty canvas), and those must be drawn again.
+const started = new WeakSet();
 
 const dark = () => window.matchMedia("(prefers-color-scheme: dark)").matches;
 const ink = () => (dark() ? "#a1a1aa" : "#52525b"); // zinc-400 / zinc-600
@@ -67,7 +71,9 @@ const builders = { e1rm: e1rmOptions, muscles: musclesOptions };
 
 async function draw(el) {
   const build = builders[el.dataset.chart];
-  if (!build || el.dataset.drawn) return;
+  if (!build || started.has(el)) return;
+  started.add(el);
+  el.replaceChildren(); // drop a restored copy of an earlier chart
   el.dataset.drawn = "starting";
   try {
     const res = await fetch(el.dataset.src, { headers: { Accept: "application/json" } });
