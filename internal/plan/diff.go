@@ -9,8 +9,27 @@ type DiffLine struct {
 // maxDiffCells bounds the LCS table; larger inputs are shown as replaced.
 const maxDiffCells = 4_000_000
 
-// DiffLines returns a minimal line diff turning a into b (LCS based).
+// DiffLines returns a minimal line diff turning a into b (LCS based). The
+// common prefix and suffix are matched first, so a local edit in a long
+// document only runs the LCS over the edited region.
 func DiffLines(a, b []string) []DiffLine {
+	var head, tail []DiffLine
+	for len(a) > 0 && len(b) > 0 && a[0] == b[0] {
+		head = append(head, DiffLine{' ', a[0]})
+		a, b = a[1:], b[1:]
+	}
+	for len(a) > 0 && len(b) > 0 && a[len(a)-1] == b[len(b)-1] {
+		tail = append(tail, DiffLine{' ', a[len(a)-1]})
+		a, b = a[:len(a)-1], b[:len(b)-1]
+	}
+	out := append(head, diffMiddle(a, b)...)
+	for i := len(tail) - 1; i >= 0; i-- {
+		out = append(out, tail[i])
+	}
+	return out
+}
+
+func diffMiddle(a, b []string) []DiffLine {
 	if len(a)*len(b) > maxDiffCells {
 		var out []DiffLine
 		for _, s := range a {

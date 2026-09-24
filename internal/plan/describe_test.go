@@ -2,6 +2,7 @@ package plan
 
 import (
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -69,7 +70,30 @@ func TestDiffLines(t *testing.T) {
 	for i := range big {
 		big[i] = strings.Repeat("x", i%7)
 	}
-	if got := DiffLines(big, big[1:]); len(got) != len(big)+len(big)-1 {
+	// Differ at both ends, so no common prefix or suffix narrows the table.
+	other := append([]string{"start"}, big[1:]...)
+	other[len(other)-1] = "end"
+	if got := DiffLines(big, other); len(got) != len(big)+len(other) {
 		t.Fatalf("oversized inputs should be shown as replaced, got %d lines", len(got))
+	}
+}
+
+// Long documents with a local edit (a 12-week plan is thousands of lines)
+// must still diff to just the edit.
+func TestDiffLinesLongDocumentWithOneEdit(t *testing.T) {
+	a := make([]string, 3000)
+	for i := range a {
+		a[i] = strconv.Itoa(i)
+	}
+	b := slices.Clone(a)
+	b[1500] = "changed"
+	var changed []DiffLine
+	for _, l := range DiffLines(a, b) {
+		if l.Op != ' ' {
+			changed = append(changed, l)
+		}
+	}
+	if !slices.Equal(changed, []DiffLine{{'-', "1500"}, {'+', "changed"}}) {
+		t.Fatalf("changed lines = %d: %.80q", len(changed), changed)
 	}
 }
