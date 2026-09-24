@@ -43,13 +43,15 @@ internal/calc/         pure training math: RTS/e1RM, rounding to equipment, load
 internal/exercise/     catalog (+ embedded seed/exercises.json), equipment profiles, TM, alternatives
 internal/plan/         plan JSON Schema + validation, per-week expansion, load resolution, versions, cursor, diffs
 internal/training/     sessions, companion sync operations (idempotent, last write wins), bootstrap, history editing
+internal/stats/        e1RM series, rep maxes and PRs, weekly hard sets per muscle (queries in store/stats.go)
 internal/web/          chi router, handlers, views/ (templ), static/ (embedded), jstest/ (node tests)
                          static/js/companion*.js + sw.js: offline workout screen and service worker
+                         static/js/stats.js + chart-data.js: uPlot charts from /api/stats/*
 test/e2e/              browser end-to-end checks (Node + Chrome DevTools Protocol, no npm deps)
 testdata/calc_cases.json  shared Go/JS calc test vectors
 ```
 
-Later milestones add `stats/` and `mcp/` under `internal/`. See the spec, §4.
+Milestone 6 adds `mcp/` under `internal/`. See the spec, §4.
 
 ## Rules
 
@@ -67,6 +69,7 @@ Later milestones add `stats/` and `mcp/` under `internal/`. See the spec, §4.
 - **Seed catalog:** edit `internal/exercise/seed/exercises.json`; slugs are permanent (plans and history refer to them). Removing an entry hides it, never deletes it. `TestSeedIsValid` checks the file.
 - **Plan documents:** `internal/plan/plan.schema.json` is the contract for the editor, the server and the AI. Change the schema, the Go types in `internal/plan/doc.go` and the semantic checks together; `internal/plan/testdata/*.golden.json` pins expansion (`go test ./internal/plan/ -update` rewrites it, so review the diff).
 - **Companion mode:** the workout screen must keep working offline. Its logic lives in `companion-core.js` (pure, covered by `jstest/companion.test.mjs`); `companion.js` only renders and persists. Every change is an operation with a UUIDv7 `op_id` applied idempotently by `/api/sync`; never make the server depend on operation order across sessions. Run `task e2e` after touching the companion, the service worker or the sync endpoint.
+- **Stats are queries, not stored values.** PRs, rep maxes, the e1RM series and muscle volume are computed from `sets` when shown, so history edits are reflected immediately. The companion's PR badge is advisory, from the bootstrap's `prs` table; history and the exercise page are authoritative.
 - **Every non-GET request with a session must carry the CSRF token**: the `X-CSRF-Token` header, set globally for htmx via `hx-headers`, or the `csrf_token` form field.
 - **The dev login bypass** (`ONEREP_DEV_USER`) only runs with `ONEREP_ENV=dev`, and only on authenticated app routes.
 - **Keep dependencies few.** Ask before adding a Go module or a vendored JS library.

@@ -203,6 +203,15 @@ try {
     .catch(() => {});
   check("finishing advances the plan", home.includes("Next: Second day"), (home.match(/<main[\s\S]*?<\/main>/) || [""])[0].replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").slice(0, 400));
 
+  // The exercise page draws the e1RM chart and lists the rep max.
+  await go("/exercises/barbell-bench-press");
+  await waitFor(() => evaluate(`!!document.querySelector('[data-chart=e1rm] canvas')`), "the e1RM chart").catch(() => {});
+  check("the exercise page draws the e1RM chart", await evaluate(`!!document.querySelector('[data-chart=e1rm] canvas')`));
+  check("the rep-max table lists the logged weight", await evaluate(`document.body.textContent.includes('Rep maxes') && [...document.querySelectorAll('[data-rep-max]')].some(r => r.textContent.includes('kg'))`));
+  await go("/stats/muscles");
+  await waitFor(() => evaluate(`!!document.querySelector('[data-chart=muscles] canvas')`), "the muscles chart").catch(() => {});
+  check("the muscles page draws its chart", await evaluate(`!!document.querySelector('[data-chart=muscles] canvas')`));
+
   // An empty workout: add an exercise, log a set, add another set and log it.
   await go("/");
   await evaluate(`[...document.querySelectorAll('button')].find(b => b.textContent.trim() === 'Start an empty workout').click()`);
@@ -215,10 +224,20 @@ try {
   await waitFor(async () => (await done()) === 1, "curl set 1");
   await evaluate(`[...document.querySelectorAll('#companion button')].find(b => b.textContent.trim() === 'Add set').click()`);
   await waitFor(() => evaluate(`!!${doneButton}`), "curl set 2");
-  await evaluate(`document.querySelector('input[name=reps]').value = '8'; ${doneButton}.click()`);
+  await evaluate(`document.querySelector('input[name=weight]').value = '12'; document.querySelector('input[name=reps]').value = '8'; ${doneButton}.click()`);
   const adhocSets = () => evaluate(`fetch("/history/${adhocID}").then(r => r.text()).then(t => (t.match(/name="set_id"/g) || []).length)`);
   await waitFor(async () => (await adhocSets()) === 2, "both curl sets on the server").catch(() => {});
   check("an empty workout can log several sets of an exercise", (await adhocSets()) === 2, `server has ${await adhocSets()}`);
+
+  await evaluate(`[...document.querySelectorAll('#companion button')].find(b => b.textContent.trim() === 'Add set').click()`);
+  await waitFor(() => evaluate(`!!${doneButton}`), "curl set 3");
+  await evaluate(`document.querySelector('input[name=weight]').value = '14'; document.querySelector('input[name=reps]').value = '8'; ${doneButton}.click()`);
+  await waitFor(async () => (await done()) === 3, "curl set 3 logged");
+  check("a heavier set at the same reps gets a PR badge",
+    await evaluate(`document.querySelectorAll('#companion [data-pr-badge]').length === 1 && !!document.querySelector('#companion [data-pr-banner]')`));
+  await waitFor(async () => (await adhocSets()) === 3, "curl set 3 on the server").catch(() => {});
+  check("history agrees it is a PR", await evaluate(`fetch("/history/${adhocID}").then(r => r.text()).then(t => (t.match(/data-pr-badge/g) || []).length === 1)`));
+  check("the workout screen shows no stray null or false", await evaluate(`!/null|false/.test(document.querySelector('#companion').textContent.replace(/Add exercise…[\s\S]*/, ""))`));
 } catch (err) {
   check("scenario ran to the end", false, err.stack || String(err));
 } finally {
