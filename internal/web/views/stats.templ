@@ -1,0 +1,48 @@
+package views
+
+import (
+	"strconv"
+
+	"github.com/LongerHV/onerep/internal/stats"
+)
+
+// MusclesPage shows weekly hard sets per muscle (spec §13).
+templ MusclesPage(p Page, mw stats.MuscleWeeks) {
+	<h1 class={ h1 }>Weekly sets per muscle</h1>
+	<p class={ hint }>
+		Hard sets: working, drop and AMRAP sets at RPE 7 or more, or with no RPE. A primary muscle counts 1, a secondary muscle 0.5. Weeks are ISO weeks (Monday to Sunday, UTC).
+	</p>
+	if len(mw.Muscles) == 0 {
+		<p class="mt-4">No hard sets in the last { strconv.Itoa(len(mw.Weeks)) } weeks.</p>
+	} else {
+		<div data-chart="muscles" data-src="/api/stats/muscles" class="mt-4 h-72 w-full" aria-label="Weekly sets per muscle"></div>
+		<div class="mt-4 overflow-x-auto">
+			<table class="w-full text-sm">
+				<thead class="text-left text-zinc-500">
+					<tr>
+						<th class="py-1 pr-2">Muscle</th>
+						for _, w := range mw.Weeks {
+							<th class="px-1 text-right font-normal" title={ w.Label }>{ w.Label[5:] }</th>
+						}
+					</tr>
+				</thead>
+				<tbody>
+					for _, m := range mw.Muscles {
+						<tr class="border-t border-zinc-200 dark:border-zinc-800">
+							<td class="py-1 pr-2 whitespace-nowrap">{ Label(m.Muscle) }</td>
+							for _, v := range m.Sets {
+								<td class="px-1 text-right tabular-nums">
+									if v > 0 {
+										{ Number(v) }
+									} else {
+										<span class="text-zinc-400">·</span>
+									}
+								</td>
+							}
+						</tr>
+					}
+				</tbody>
+			</table>
+		</div>
+	}
+}

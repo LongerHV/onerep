@@ -7,6 +7,7 @@ import (
 	"github.com/LongerHV/onerep/internal/calc"
 	"github.com/LongerHV/onerep/internal/exercise"
 	"github.com/LongerHV/onerep/internal/plan"
+	"github.com/LongerHV/onerep/internal/stats"
 	"github.com/LongerHV/onerep/internal/store"
 )
 
@@ -23,6 +24,7 @@ const (
 	h1           = "text-2xl font-semibold"
 	h2           = "mt-8 text-lg font-semibold"
 	card         = "rounded border border-zinc-200 p-4 dark:border-zinc-800"
+	prBadge      = "rounded bg-amber-200 px-1.5 py-0.5 text-xs font-medium text-amber-900 dark:bg-amber-900 dark:text-amber-100"
 )
 
 // Weight formats kg in unit, like "102.5 kg" or "225 lb".
@@ -133,4 +135,29 @@ func optInt(v *int) string {
 		return ""
 	}
 	return strconv.Itoa(*v)
+}
+
+// RepMaxRow is one row of the rep-max table; Max is nil when nothing was logged at Reps.
+type RepMaxRow struct {
+	Reps int
+	Max  *store.RepMax
+}
+
+// RepMaxRows lays maxes out as rows for 1 to stats.MaxRepMax reps.
+func RepMaxRows(maxes []store.RepMax) []RepMaxRow {
+	rows := make([]RepMaxRow, stats.MaxRepMax)
+	for i := range rows {
+		rows[i].Reps = i + 1
+	}
+	for i := range maxes {
+		if r := maxes[i].Reps; r >= 1 && r <= stats.MaxRepMax {
+			rows[r-1].Max = &maxes[i]
+		}
+	}
+	return rows
+}
+
+// hasWeights reports whether an exercise records a weight (and so has PRs).
+func hasWeights(measurement string) bool {
+	return measurement == "weight_reps" || measurement == "bw_reps"
 }

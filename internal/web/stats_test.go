@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
@@ -119,5 +120,66 @@ func TestStatsAPIWithoutSessionIs401(t *testing.T) {
 		if resp.StatusCode != http.StatusUnauthorized {
 			t.Errorf("%s without a session = %d, want 401", path, resp.StatusCode)
 		}
+	}
+}
+func TestExercisePageShowsProgress(t *testing.T) {
+	srv, c, db := newAppDB(t, "alice")
+	u := devUser(t, srv.URL, c, db)
+	sess := newSessionFor(t, db, u.ID)
+	day := time.Date(2026, 9, 21, 18, 0, 0, 0, time.UTC)
+	logSet(t, db, u.ID, sess.ID, "00000000-0000-7000-8000-000000000011", "barbell-bench-press", 102.5, 3, ptr(9), ptr(112), day)
+	html := read(t, mustGet(t, c, srv.URL+"/exercises/barbell-bench-press"))
+	for _, want := range []string{
+		`data-chart="e1rm"`, `data-src="/api/stats/exercises/barbell-bench-press/e1rm"`,
+		"Rep maxes", "102.5 kg", "2026-09-21", `href="/history/` + sess.ID + `"`,
+	} {
+		if !strings.Contains(html, want) {
+			t.Errorf("exercise page lacks %q", want)
+		}
+	}
+	if strings.Count(html, `data-rep-max`) != 12 {
+		t.Errorf("rep-max table should have 12 rows, has %d", strings.Count(html, `data-rep-max`))
+	}
+}
+
+func TestExercisePageWithoutHistory(t *testing.T) {
+	srv, c := newApp(t, "alice")
+	html := read(t, mustGet(t, c, srv.URL+"/exercises/barbell-bench-press"))
+	if !strings.Contains(html, "No working sets logged yet.") || strings.Contains(html, `data-chart=`) {
+		t.Error("an exercise without sets should say so and draw no chart")
+	}
+	// Timed exercises have neither an e1RM nor weight PRs.
+	html = read(t, mustGet(t, c, srv.URL+"/exercises/plank"))
+	if strings.Contains(html, "Rep maxes") || strings.Contains(html, `data-chart=`) {
+		t.Error("a timed exercise shows no rep maxes or e1RM chart")
+	}
+}
+
+func TestMusclesPage(t *testing.T) {
+	srv, c, db := newAppDB(t, "alice")
+	u := devUser(t, srv.URL, c, db)
+	sess := newSessionFor(t, db, u.ID)
+	logSet(t, db, u.ID, sess.ID, "00000000-0000-7000-8000-000000000021", "barbell-back-squat", 100, 5, nil, nil, time.Now())
+	html := read(t, mustGet(t, c, srv.URL+"/stats/muscles"))
+	for _, want := range []string{`data-chart="muscles"`, "quads", "adductors", "0.5", "Hard sets", `href="/stats/muscles"`} {
+		if !strings.Contains(html, want) {
+			t.Errorf("muscles page lacks %q", want)
+		}
+	}
+}
+
+func TestHistoryShowsPRBadges(t *testing.T) {
+	srv, c, db := newAppDB(t, "alice")
+	u := devUser(t, srv.URL, c, db)
+	old := newSessionFor(t, db, u.ID)
+	logSet(t, db, u.ID, old.ID, "00000000-0000-7000-8000-000000000031", "barbell-bench-press", 100, 5, nil, nil, time.Now().Add(-48*time.Hour))
+	cur := newSessionFor(t, db, u.ID)
+	logSet(t, db, u.ID, cur.ID, "00000000-0000-7000-8000-000000000032", "barbell-bench-press", 105, 5, nil, nil, time.Now())
+	html := read(t, mustGet(t, c, srv.URL+"/history/"+cur.ID))
+	if strings.Count(html, `data-pr-badge`) != 1 {
+		t.Errorf("history should badge the one PR set, found %d", strings.Count(html, `data-pr-badge`))
+	}
+	if html := read(t, mustGet(t, c, srv.URL+"/history/"+old.ID)); strings.Contains(html, `data-pr-badge`) {
+		t.Error("the first set at a rep count is not a PR")
 	}
 }

@@ -1,6 +1,8 @@
 package views
 
 import (
+	"strconv"
+
 	"github.com/LongerHV/onerep/internal/calc"
 	"github.com/LongerHV/onerep/internal/exercise"
 	"github.com/LongerHV/onerep/internal/store"
@@ -102,6 +104,42 @@ templ ExerciseDetailPage(p Page, d ExerciseDetail) {
 			<dd>{ joinLabels(d.Exercise.Aliases) }</dd>
 		}
 	</dl>
+	if hasWeights(d.Exercise.Measurement) {
+		<h2 class={ h2 }>Progress</h2>
+		if len(d.Stats.RepMaxes) == 0 {
+			<p class={ hint }>No working sets logged yet.</p>
+		} else {
+			if d.Exercise.Measurement == "weight_reps" && len(d.Stats.Series) > 0 {
+				<div
+					data-chart="e1rm"
+					data-src={ "/api/stats/exercises/" + d.Exercise.Slug + "/e1rm" }
+					class="mt-2 h-64 w-full"
+					aria-label="Estimated one-rep max over time"
+				></div>
+				<p class={ hint }>Best estimated 1RM of each workout. Filled points come from RPE, hollow ones from reps alone.</p>
+			}
+			<h3 class="mt-4 font-medium">Rep maxes</h3>
+			<table class="mt-2 w-full text-sm">
+				<thead class="text-left text-zinc-500">
+					<tr><th class="py-1">Reps</th><th>Best</th><th>Date</th></tr>
+				</thead>
+				<tbody>
+					for _, row := range RepMaxRows(d.Stats.RepMaxes) {
+						<tr data-rep-max class="border-t border-zinc-200 dark:border-zinc-800">
+							<td class="py-1">{ strconv.Itoa(row.Reps) }</td>
+							if row.Max != nil {
+								<td>{ Weight(row.Max.WeightKg, p.Identity.User.Unit) }</td>
+								<td><a href={ templ.URL("/history/" + row.Max.SessionID) } class="underline">{ row.Max.DoneAt.Format("2006-01-02") }</a></td>
+							} else {
+								<td class="text-zinc-400">—</td>
+								<td></td>
+							}
+						</tr>
+					}
+				</tbody>
+			</table>
+		}
+	}
 	<h2 class={ h2 }>Your settings</h2>
 	<form method="post" action={ templ.URL("/exercises/" + d.Exercise.Slug + "/settings") } class={ card + " mt-2 grid gap-4 sm:grid-cols-2" }>
 		@CSRF(p)

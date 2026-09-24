@@ -3,6 +3,7 @@ package views
 import (
 	"github.com/LongerHV/onerep/internal/exercise"
 	"github.com/LongerHV/onerep/internal/plan"
+	"github.com/LongerHV/onerep/internal/stats"
 	"github.com/LongerHV/onerep/internal/store"
 )
 
@@ -15,6 +16,7 @@ type ExerciseDetail struct {
 	Candidates   []store.Exercise // exercises that can be added as alternatives
 	History      []store.TrainingMaxChange
 	TMInput      string // training max form value, in the user's unit
+	Stats        stats.ExerciseStats
 	Errors       map[string]string
 }
 
@@ -91,6 +93,7 @@ type HistoryDetail struct {
 	Exercises    map[string]store.Exercise
 	Catalog      []store.Exercise // for adding a set
 	NextGroupPos int
+	PRs          map[string]bool // ids of PR sets
 	Error        string
 }
 

@@ -19,6 +19,7 @@ const MuscleWeeks = 12
 func (s *Server) statsRoutes(r chi.Router) {
 	r.Get("/api/stats/exercises/{slug}/e1rm", s.apiE1RM)
 	r.Get("/api/stats/muscles", s.apiMuscles)
+	r.Get("/stats/muscles", s.statsMuscles)
 }
 
 // round1 rounds a chart value to 0.1.
@@ -75,4 +76,13 @@ func (s *Server) apiMuscles(w http.ResponseWriter, r *http.Request) {
 func (s *Server) apiFail(w http.ResponseWriter, r *http.Request, err error) {
 	slog.ErrorContext(r.Context(), "api request failed", "path", r.URL.Path, "err", err)
 	writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "server error"})
+}
+
+func (s *Server) statsMuscles(w http.ResponseWriter, r *http.Request) {
+	mw, err := s.Stats.RecentMuscleSets(r.Context(), user(r), MuscleWeeks)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	render(w, r, http.StatusOK, views.MusclesPage(page(r, "Muscles"), mw))
 }

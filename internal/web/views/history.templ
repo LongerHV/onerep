@@ -81,6 +81,9 @@ templ HistoryDetailPage(p Page, d HistoryDetail) {
 						if set.Kind != "working" {
 							<span class={ badge }>{ set.Kind }</span>
 						}
+						if d.PRs[set.ID] {
+							<span data-pr-badge class={ prBadge }>PR</span>
+						}
 						@setFields(p, d.Exercises[g.Slug].Measurement, set)
 						<button type="submit" class={ btnSecondary }>Save</button>
 					</form>

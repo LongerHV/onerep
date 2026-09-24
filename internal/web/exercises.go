@@ -78,6 +78,9 @@ func (s *Server) exerciseDetailData(r *http.Request, slug string) (views.Exercis
 	if tm := d.Settings.TrainingMaxKg; tm != nil {
 		d.TMInput = displayTM(*tm, u.Unit)
 	}
+	if d.Stats, err = s.Stats.ExerciseStats(ctx, u, slug); err != nil {
+		return d, err
+	}
 	return d, nil
 }
 

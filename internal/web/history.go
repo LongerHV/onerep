@@ -56,6 +56,9 @@ func (s *Server) historyData(r *http.Request, id string) (views.HistoryDetail, e
 		return d, err
 	}
 	d.Catalog = catalog
+	if d.PRs, err = s.Stats.SessionPRs(ctx, u, id); err != nil {
+		return d, err
+	}
 	for _, set := range sets {
 		if _, ok := d.Exercises[set.Slug]; !ok {
 			ex, err := s.Exercises.Get(ctx, u.ID, set.Slug)
