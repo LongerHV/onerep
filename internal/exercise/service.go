@@ -3,6 +3,7 @@ package exercise
 import (
 	"context"
 	"errors"
+	"reflect"
 	"regexp"
 	"slices"
 	"strings"
@@ -349,4 +350,43 @@ func weightRange(lo, hi, step float64) []float64 {
 		out = append(out, v)
 	}
 	return out
+}
+
+// ReplaceUntouchedStarters swaps the starter profiles for the ones in toUnit
+// when the user's equipment is still exactly the starter set in fromUnit.
+// Starters are created on the first request, before a user can choose a unit,
+// so this gives someone who switches to lb right away a 45 lb bar. Equipment
+// the user has changed in any way is left alone. It reports whether it
+// replaced anything.
+func (s *Service) ReplaceUntouchedStarters(ctx context.Context, userID, fromUnit, toUnit string) (bool, error) {
+	if fromUnit == toUnit {
+		return false, nil
+	}
+	have, err := s.Store.ListEquipment(ctx, userID)
+	if err != nil {
+		return false, err
+	}
+	starters := StarterEquipment(fromUnit)
+	if len(have) != len(starters) {
+		return false, nil
+	}
+	for _, st := range starters {
+		if !slices.ContainsFunc(have, func(e store.Equipment) bool {
+			return e.Name == st.Name && e.IsDefault == st.IsDefault && reflect.DeepEqual(e.Spec, st.Spec)
+		}) {
+			return false, nil
+		}
+	}
+	for _, e := range have {
+		if err := s.Store.DeleteEquipment(ctx, userID, e.ID); err != nil {
+			return false, err
+		}
+	}
+	for _, e := range StarterEquipment(toUnit) {
+		e.UserID = userID
+		if _, err := s.Store.SaveEquipment(ctx, e); err != nil {
+			return false, err
+		}
+	}
+	return true, nil
 }

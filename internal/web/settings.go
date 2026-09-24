@@ -14,8 +14,12 @@ func (s *Server) settings(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) saveSettings(w http.ResponseWriter, r *http.Request) {
+	u, unit := user(r), r.PostFormValue("unit")
 	days, _ := strconv.Atoi(r.PostFormValue("e1rm_window_days"))
-	err := s.Account.UpdateSettings(r.Context(), user(r).ID, r.PostFormValue("unit"), days)
+	err := s.Account.UpdateSettings(r.Context(), u.ID, unit, days)
+	if err == nil {
+		_, err = s.Exercises.ReplaceUntouchedStarters(r.Context(), u.ID, u.Unit, unit)
+	}
 	if errors.Is(err, account.ErrInvalidSettings) {
 		render(w, r, http.StatusUnprocessableEntity, views.SettingsPage(page(r, "Settings"), false, err.Error()))
 		return

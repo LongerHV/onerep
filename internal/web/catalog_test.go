@@ -227,3 +227,28 @@ func TestEquipmentPages(t *testing.T) {
 		t.Fatalf("linking other user's equipment: %d", resp.StatusCode)
 	}
 }
+
+// Starter profiles are created on the first request, before the user can pick
+// a unit. Switching unit replaces them while they are still untouched.
+func TestUnitSwitchReplacesUntouchedStarterEquipment(t *testing.T) {
+	srv, c := newApp(t, "alice")
+	csrf := session(t, srv, c)
+	if list := read(t, mustGet(t, c, srv.URL+"/equipment")); !strings.Contains(list, "20 kg bar") {
+		t.Fatal("expected kg starters first")
+	}
+	post(t, c, srv.URL+"/settings", csrf, url.Values{"unit": {"lb"}, "e1rm_window_days": {"30"}})
+	list := read(t, mustGet(t, c, srv.URL+"/equipment"))
+	if !strings.Contains(list, "45 lb bar, plates 2.5, 5, 10, 25-45/10 lb") || !strings.Contains(list, "5-100/5 lb") || strings.Contains(list, " kg") {
+		t.Fatalf("lb starters expected after switching unit:\n%s", list)
+	}
+
+	// Once the user edits a profile, switching back leaves their equipment alone.
+	resp, _ := post(t, c, srv.URL+"/equipment", csrf, url.Values{"kind": {"cable"}, "name": {"Cable"}, "unit": {"lb"}, "stack": {"10-200/10"}})
+	if resp.StatusCode != http.StatusSeeOther {
+		t.Fatalf("add cable: %d", resp.StatusCode)
+	}
+	post(t, c, srv.URL+"/settings", csrf, url.Values{"unit": {"kg"}, "e1rm_window_days": {"30"}})
+	if list := read(t, mustGet(t, c, srv.URL+"/equipment")); !strings.Contains(list, "45 lb bar") || !strings.Contains(list, "Cable") {
+		t.Fatalf("customized equipment must survive a unit switch:\n%s", list)
+	}
+}
