@@ -22,7 +22,7 @@ The dev shell sets `CGO_ENABLED=0` and `ONEREP_ENV=dev`.
 | Live-reload dev server, signed in as `$USER`, no IdP needed | `task dev` |
 | Local Dex identity provider (alice@example.com / password) | `task dex`, then `task dev:oidc` |
 | Regenerate templ components and Tailwind CSS | `task generate` |
-| Tests | `task test` (or `go test ./internal/<pkg>/ -run TestName`) |
+| Tests | `task test` (or `go test ./internal/<pkg>/ -run TestName`); browser JS: `task test:js` |
 | Lint | `task lint` |
 | Everything CI runs | `task ci` |
 | New migration after editing `internal/store/schema.sql` | `task migrate:diff NAME=<snake_case>` |
@@ -36,10 +36,14 @@ internal/config/       env-var configuration
 internal/store/        ALL SQL: schema.sql, generated migrations/, repositories
 internal/store/storetest/  migrated temp DB for tests
 internal/auth/         OIDC, cookie sessions, CSRF, dev login bypass
-internal/web/          chi router, handlers, views/ (templ), static/ (embedded)
+internal/account/      user preferences (unit, e1RM window)
+internal/calc/         pure training math: RTS/e1RM, rounding to equipment, load resolution
+internal/exercise/     catalog (+ embedded seed/exercises.json), equipment profiles, TM, alternatives
+internal/web/          chi router, handlers, views/ (templ), static/ (embedded), jstest/ (node tests)
+testdata/calc_cases.json  shared Go/JS calc test vectors
 ```
 
-Later milestones add `exercise/`, `plan/`, `training/`, `calc/`, `stats/`, and `mcp/` under `internal/`. See the spec, §4.
+Later milestones add `plan/`, `training/`, `stats/`, and `mcp/` under `internal/`. See the spec, §4.
 
 ## Rules
 
@@ -52,6 +56,8 @@ Later milestones add `exercise/`, `plan/`, `training/`, `calc/`, `stats/`, and `
 - **Generated files are committed:** `*_templ.go` and `internal/web/static/app.css`. Run `task generate` after editing `.templ` files or `internal/web/styles/input.css`. CI fails if they're stale.
 - **Tests use a real SQLite database** (`storetest.New(t)`). Don't mock the store.
 - **Web handlers and MCP tools are thin adapters.** Business rules live in services so the web UI and the AI can't disagree.
+- **Calc parity:** `internal/calc` (Go) and `internal/web/static/js/calc.js` implement the same math. Change both together and add a case to `testdata/calc_cases.json`; `task test` and `task test:js` both run it.
+- **Seed catalog:** edit `internal/exercise/seed/exercises.json`; slugs are permanent (plans and history refer to them). Removing an entry hides it, never deletes it. `TestSeedIsValid` checks the file.
 - **Every non-GET request with a session must carry the CSRF token**: the `X-CSRF-Token` header, set globally for htmx via `hx-headers`, or the `csrf_token` form field.
 - **The dev login bypass** (`ONEREP_DEV_USER`) only runs with `ONEREP_ENV=dev`, and only on authenticated app routes.
 - **Keep dependencies few.** Ask before adding a Go module or a vendored JS library.
