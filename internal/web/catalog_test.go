@@ -252,3 +252,34 @@ func TestUnitSwitchReplacesUntouchedStarterEquipment(t *testing.T) {
 		t.Fatalf("customized equipment must survive a unit switch:\n%s", list)
 	}
 }
+
+// The settings form resubmits the displayed (rounded) TM; saving it unchanged
+// must not nudge the stored value or log a change.
+func TestResavingDisplayedTrainingMaxChangesNothing(t *testing.T) {
+	srv, c, db := newAppDB(t, "alice")
+	csrf := session(t, srv, c)
+	base := srv.URL + "/exercises/barbell-back-squat"
+	post(t, c, base+"/settings", csrf, url.Values{"training_max": {"142.5"}})
+	post(t, c, srv.URL+"/settings", csrf, url.Values{"unit": {"lb"}, "e1rm_window_days": {"30"}})
+
+	u, err := db.UpsertOIDCUser(context.Background(), auth.DevIssuer, "alice", "alice@localhost", "alice")
+	if err != nil {
+		t.Fatal(err)
+	}
+	eqs, err := db.ListEquipment(context.Background(), u.ID)
+	if err != nil || len(eqs) == 0 {
+		t.Fatalf("equipment: %v %v", eqs, err)
+	}
+	if page := read(t, mustGet(t, c, base)); !strings.Contains(page, `value="314.16"`) {
+		t.Fatal("TM not displayed as 314.16 lb")
+	}
+	resp, _ := post(t, c, base+"/settings", csrf, url.Values{"training_max": {"314.16"}, "equipment_id": {eqs[0].ID}})
+	if resp.StatusCode != http.StatusSeeOther {
+		t.Fatalf("save: %d", resp.StatusCode)
+	}
+	ue, _ := db.UserExercise(context.Background(), u.ID, "barbell-back-squat")
+	hist, _ := db.TrainingMaxHistory(context.Background(), u.ID, "barbell-back-squat")
+	if ue.TrainingMaxKg == nil || *ue.TrainingMaxKg != 142.5 || len(hist) != 1 || ue.EquipmentID != eqs[0].ID {
+		t.Fatalf("TM = %v, history %d entries, link %q; want 142.5, 1, linked", ue.TrainingMaxKg, len(hist), ue.EquipmentID)
+	}
+}

@@ -76,7 +76,7 @@ func (s *Server) exerciseDetailData(r *http.Request, slug string) (views.Exercis
 		}
 	}
 	if tm := d.Settings.TrainingMaxKg; tm != nil {
-		d.TMInput = exercise.FormatNumber(calc.FromKg(*tm, u.Unit))
+		d.TMInput = displayTM(*tm, u.Unit)
 	}
 	return d, nil
 }
@@ -180,7 +180,7 @@ func (s *Server) exerciseSettings(w http.ResponseWriter, r *http.Request) {
 	}
 	if len(errs) == 0 {
 		err := s.Exercises.LinkEquipment(ctx, u.ID, slug, r.PostForm.Get("equipment_id"))
-		if err == nil {
+		if err == nil && !s.showsCurrentTM(r, slug, tmText) {
 			err = s.Exercises.SetTrainingMax(ctx, u.ID, slug, tm, "web")
 		}
 		var fe exercise.FieldErrors
@@ -266,4 +266,25 @@ func (s *Server) alternativeRemove(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	http.Redirect(w, r, "/exercises/"+slug, http.StatusSeeOther)
+}
+
+// displayTM is how a training max appears in the settings form.
+func displayTM(kg float64, unit string) string {
+	return exercise.FormatNumber(calc.FromKg(kg, unit))
+}
+
+// showsCurrentTM reports whether text is the current training max as the form
+// displayed it. The display is rounded to 0.01 of the user's unit, so saving it
+// back would change the stored kg value and log a change nobody made.
+func (s *Server) showsCurrentTM(r *http.Request, slug, text string) bool {
+	u := user(r)
+	ex, err := s.Exercises.Get(r.Context(), u.ID, slug)
+	if err != nil {
+		return false
+	}
+	st, err := s.Exercises.Settings(r.Context(), u.ID, ex)
+	if err != nil || st.TrainingMaxKg == nil {
+		return false
+	}
+	return text == displayTM(*st.TrainingMaxKg, u.Unit)
 }
