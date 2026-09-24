@@ -69,3 +69,13 @@ Known issues, deferred on purpose: each was found in a milestone's final review 
 - **Redundant work.** The exercise page calls `Exercises.Get` twice, and the e1RM API runs `RepMaxes`, which it never uses. (`internal/web/exercises.go`, `internal/web/stats.go`)
 - **Chart colours don't follow a theme change** until the page is reloaded. (`static/js/stats.js`)
 - **Muscles chart ticks could fall between weeks** on a wider layout; set `incrs: [1, 2, 4]` on the x axis. (`static/js/stats.js`)
+
+## MCP
+
+- **Token lookup errors leak and aren't logged.** A `Verify` error other than not-found reaches `RequireBearerToken`, which answers 500 with the raw error text and logs nothing. A failed best-effort `last_used_at` write (e.g. SQLITE_BUSY) fails the whole request. Fix: log and return a generic error in `verify`; ignore or log the `last_used_at` write. (`internal/mcp/server.go`, `internal/store/api_tokens.go`)
+- **A draft can change between review and activation.** If the AI replaces a draft while the user has its compare page open, Activate takes the new document. `Service.Activate` also reads the doc outside its transaction. Fix: post a hash of the rendered doc and refuse on mismatch. (`internal/plan/service.go`, compare page)
+- **`list_sessions` exercise order relies on `group_concat` over an ordered subquery,** which SQLite doesn't guarantee. Fix: `group_concat(slug, ',' ORDER BY …)` (SQLite ≥ 3.44). (`internal/store/sessions.go`, SearchSessions)
+- **`get_weekly_muscle_volume` can return 105 weeks** (Sunday to Sunday 104 weeks later). Fix: count weeks between the Monday starts. (`internal/mcp/training.go`)
+- **Tool error request ids don't match the request log.** `explain` makes its own id; use `middleware.GetReqID(ctx)` (spec §16). (`internal/mcp/server.go`)
+- **`save_plan_draft` loose ends:** `plan_id` is ignored when `version_id` is given (even if it names another plan); archived plans accept drafts; replacing the only draft of a draft-only plan doesn't rename the plan.
+- **Test gap:** `TestMCPIsMountedWithoutCookiesOrCSRF` sends no session cookie (correct by construction, since `/mcp` is outside the CSRF group).
