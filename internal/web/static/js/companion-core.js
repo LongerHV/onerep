@@ -53,14 +53,23 @@ export function newState(boot) {
 }
 
 // mergeServerSets folds the server's copy of the session's sets into local
-// state; the newer edit of each set wins.
-export function mergeServerSets(state, serverSets) {
+// state; the newer edit of each set wins. Sets in groups past the plan are
+// exercises added during the workout (on any device, or in history): they
+// are recorded in state.added so positions never collide.
+export function mergeServerSets(boot, state, serverSets) {
   const s = structuredClone(state);
+  const planned = boot.snapshot.groups.length;
   for (const set of serverSets) {
     const local = s.sets[set.id];
-    if (local && Date.parse(local.updated_at) >= Date.parse(set.updated_at)) continue;
-    s.sets[set.id] = set;
-    s.positions[key(set.group_pos, set.exercise_pos, set.set_pos)] = set.id;
+    if (!(local && Date.parse(local.updated_at) >= Date.parse(set.updated_at))) {
+      s.sets[set.id] = set;
+      s.positions[key(set.group_pos, set.exercise_pos, set.set_pos)] = set.id;
+    }
+    const i = set.group_pos - planned;
+    if (i >= 0 && !s.added[i]) {
+      while (s.added.length < i) s.added.push(null); // a gap: a group only another device knows
+      s.added[i] = { slug: set.slug };
+    }
   }
   return s;
 }
@@ -73,7 +82,7 @@ export function groups(boot, state) {
   }));
   state.added.forEach((a, i) => {
     const gi = boot.snapshot.groups.length + i;
-    out.push({ rest_s: 90, exercises: [exerciseView(boot, state, gi, 0, a.slug, [], [])] });
+    out.push({ rest_s: 90, exercises: a ? [exerciseView(boot, state, gi, 0, a.slug, [], [])] : [] });
   });
   return out;
 }
@@ -199,17 +208,13 @@ export function target(boot, state, step) {
   return out;
 }
 
-// restAfter is the rest in seconds after a step: a group's rest follows each
-// complete round (after the last exercise of the round).
+// restAfter is the rest in seconds after a step: the group's rest, except
+// between the exercises of one superset round. The last set rests too, since
+// the lifter may add another.
 export function restAfter(boot, state, step) {
   const all = steps(boot, state);
-  const i = all.findIndex((x) => x.key === step.key);
-  const next = all[i + 1];
+  const next = all[all.findIndex((x) => x.key === step.key) + 1];
   if (next && next.g === step.g && next.s === step.s) return 0; // superset: go straight to the next exercise
-  if (!next || next.g !== step.g) {
-    const later = all.slice(i + 1).some((x) => x.g === step.g);
-    if (!later) return 0; // last set of the group
-  }
   return groups(boot, state)[step.g].rest_s || 0;
 }
 
@@ -323,4 +328,35 @@ export function settle(outbox, results) {
     else if (r.status === "rejected") failed.push({ ...o, reason: r.reason || "rejected" });
   }
   return { remaining, failed };
+}
+
+const isNum = (x) => typeof x === "number" && Number.isFinite(x);
+
+// validateValues checks a set before it is queued, so values the server
+// would reject (RPE 80 typed into the wrong field) are caught while the
+// lifter can still fix them. It returns a message, or null when valid.
+export function validateValues(measurement, v) {
+  if (v.weight_kg !== null && v.weight_kg !== undefined && (!isNum(v.weight_kg) || v.weight_kg < 0 || v.weight_kg > 2000)) {
+    return "Enter a weight between 0 and 2000 kg.";
+  }
+  if (v.rpe !== null && v.rpe !== undefined && (!isNum(v.rpe) || v.rpe < 1 || v.rpe > 10)) {
+    return "RPE must be between 1 and 10.";
+  }
+  if (["weight_reps", "bw_reps", "reps"].includes(measurement) &&
+      (!Number.isInteger(v.reps) || v.reps < 0 || v.reps > 1000)) {
+    return "Enter the reps you did.";
+  }
+  if (["time", "distance_time"].includes(measurement) &&
+      (!Number.isInteger(v.duration_s) || v.duration_s < 0 || v.duration_s > 86400)) {
+    return "Enter the seconds.";
+  }
+  if (v.distance_m !== null && v.distance_m !== undefined && (!isNum(v.distance_m) || v.distance_m < 0 || v.distance_m > 1e6)) {
+    return "Enter a distance in metres.";
+  }
+  return null;
+}
+
+// failedFor lists the rejected operations of one session.
+export function failedFor(failed, sessionId) {
+  return failed.filter((f) => f.payload && f.payload.session_id === sessionId);
 }

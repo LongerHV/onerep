@@ -3,7 +3,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   addExercise, addSet, currentStep, deleteSet, finish, groups, logSet, logged, mergeServerSets,
-  newState, parseReps, restAfter, sessionE1RM, settle, skip, status, steps, swap, target, uuidv7,
+  failedFor, newState, parseReps, restAfter, sessionE1RM, settle, skip, status, steps, swap, target, uuidv7, validateValues,
 } from "../static/js/companion-core.js";
 
 const bar = { kind: "barbell", unit: "kg", config: { bar: 20, plates: [25, 20, 15, 10, 5, 2.5, 1.25] } };
@@ -74,14 +74,15 @@ test("steps run groups in order and supersets round by round", () => {
   ]);
 });
 
-test("rest follows each round, not each superset exercise", () => {
+test("rest follows every set except mid-way through a superset round", () => {
   const b = boot();
   const s = newState(b);
   const at = (k) => steps(b, s).find((x) => x.key === k);
   assert.equal(restAfter(b, s, at("0:0:0")), 180);
-  assert.equal(restAfter(b, s, at("0:0:3")), 0, "last set of a group");
+  assert.equal(restAfter(b, s, at("0:0:3")), 180, "rest before moving on to the next exercise");
   assert.equal(restAfter(b, s, at("1:0:0")), 0, "A1 goes straight to B1");
   assert.equal(restAfter(b, s, at("1:1:0")), 90, "rest after B1 completes the round");
+  assert.equal(restAfter(b, s, at("1:0:1")), 90, "the last set rests too: more sets may be added");
 });
 
 test("targets resolve and adapt to the sets actually done", () => {
@@ -160,12 +161,12 @@ test("server sets merge in; the newer edit wins", () => {
   const [first] = steps(b, newState(b));
   const { state: local, op } = logSet(b, newState(b), first, { weight_kg: 70, reps: 5 }, T0 + 60_000);
   const older = { ...op.payload, weight_kg: 60, updated_at: new Date(T0).toISOString() };
-  assert.equal(logged(mergeServerSets(local, [older]), first).weight_kg, 70);
+  assert.equal(logged(mergeServerSets(b, local, [older]), first).weight_kg, 70);
   const newer = { ...op.payload, weight_kg: 75, updated_at: new Date(T0 + 120_000).toISOString() };
-  assert.equal(logged(mergeServerSets(local, [newer]), first).weight_kg, 75);
+  assert.equal(logged(mergeServerSets(b, local, [newer]), first).weight_kg, 75);
   // A set logged on another device beyond the plan shows up as an extra step.
   const extra = { ...op.payload, id: uuidv7(T0), set_pos: 9 };
-  assert.equal(steps(b, mergeServerSets(newState(b), [extra])).filter((x) => x.g === 0).length, 10);
+  assert.equal(steps(b, mergeServerSets(b, newState(b), [extra])).filter((x) => x.g === 0).length, 10);
 });
 
 test("finishing and settling the outbox", () => {
@@ -187,5 +188,38 @@ test("timestamps compare as times, not strings (Go omits zero milliseconds)", ()
   const { state: local, op } = logSet(b, newState(b), first, { weight_kg: 70, reps: 5 }, T0 + 500);
   // The server's copy of an older edit, formatted by Go: "…T10:00:00Z" sorts after "…T10:00:00.500Z" as a string.
   const serverOlder = { ...op.payload, weight_kg: 60, updated_at: "2026-09-24T10:00:00Z" };
-  assert.equal(logged(mergeServerSets(local, [serverOlder]), first).weight_kg, 70);
+  assert.equal(logged(mergeServerSets(b, local, [serverOlder]), first).weight_kg, 70);
+});
+
+test("exercises added on another device show up, and new ones take the next free group", () => {
+  const b = { ...boot(), snapshot: { name: "Workout", groups: [] } };
+  // Device A added bench (group 0) and logged a set.
+  let a = addExercise(b, newState(b), "barbell-bench-press");
+  const { op } = logSet(b, a, steps(b, a)[0], { weight_kg: 60, reps: 8 }, T0);
+  // Device B opens the session and sees it.
+  let dev = mergeServerSets(b, newState(b), [op.payload]);
+  assert.deepEqual(steps(b, dev).map((x) => x.key), ["0:0:0"]);
+  assert.equal(target(b, dev, steps(b, dev)[0]).slug, "barbell-bench-press");
+  // B adds plank: it must not land on bench's group.
+  dev = addExercise(b, dev, "plank");
+  const plank = steps(b, dev).at(-1);
+  assert.equal(plank.g, 1);
+  assert.equal(status(dev, plank), "todo");
+});
+
+test("values are checked before they are queued", () => {
+  assert.equal(validateValues("weight_reps", { weight_kg: 100, reps: 5, rpe: 8 }), null);
+  assert.match(validateValues("weight_reps", { weight_kg: 100, reps: 5, rpe: 80 }), /RPE/);
+  assert.match(validateValues("weight_reps", { weight_kg: 100, reps: null }), /reps/);
+  assert.match(validateValues("weight_reps", { weight_kg: -5, reps: 5 }), /weight/);
+  assert.match(validateValues("time", { duration_s: null }), /seconds/);
+  assert.equal(validateValues("bw_reps", { weight_kg: 0, reps: 10 }), null);
+});
+
+test("rejected changes are listed per session", () => {
+  const failed = [
+    { op_id: "1", op: "upsert_set", payload: { session_id: "sess" }, reason: "RPE must be between 1 and 10" },
+    { op_id: "2", op: "edit_notes", payload: { session_id: "other" }, reason: "bad notes" },
+  ];
+  assert.deepEqual(failedFor(failed, "sess").map((f) => f.op_id), ["1"]);
 });
