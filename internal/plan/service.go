@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/LongerHV/onerep/internal/calc"
 	"github.com/LongerHV/onerep/internal/exercise"
@@ -44,10 +45,16 @@ type Exercises interface {
 	Settings(ctx context.Context, userID string, ex store.Exercise) (exercise.Settings, error)
 }
 
+// History supplies estimated 1RMs from logged sets. *store.DB implements it.
+type History interface {
+	BestE1RM(ctx context.Context, userID, slug string, since time.Time) (*float64, error)
+}
+
 // Service implements plan rules on top of the store.
 type Service struct {
 	Store     Store
 	Exercises Exercises
+	History   History // optional: without it RPE loads stay unresolved
 }
 
 // ErrNoActiveVersion is returned when following a plan that has only drafts.
@@ -72,6 +79,7 @@ type slugInfo struct {
 	ex       store.Exercise
 	exists   bool
 	settings exercise.Settings
+	e1rm     *float64
 }
 
 func (s *Service) catalogFor(ctx context.Context, user store.User) *catalog {
@@ -88,6 +96,12 @@ func (c *catalog) info(slug string) *slugInfo {
 		if st, err := c.svc.Exercises.Settings(c.ctx, c.user.ID, ex); err == nil {
 			i.settings = st
 		}
+		if c.svc.History != nil {
+			since := time.Now().AddDate(0, 0, -c.user.E1RMWindowDays)
+			if best, err := c.svc.History.BestE1RM(c.ctx, c.user.ID, slug, since); err == nil {
+				i.e1rm = best
+			}
+		}
 	}
 	c.cache[slug] = i
 	return i
@@ -101,8 +115,9 @@ func (c *catalog) Exercise(slug string) (bool, bool) {
 func (c *catalog) HasTrainingMax(slug string) bool { return c.info(slug).settings.TrainingMaxKg != nil }
 
 func (c *catalog) loadContext(slug string) calc.LoadContext {
-	st := c.info(slug).settings
-	ctx := calc.LoadContext{TMKg: st.TrainingMaxKg, Unit: c.user.Unit}
+	i := c.info(slug)
+	st := i.settings
+	ctx := calc.LoadContext{TMKg: st.TrainingMaxKg, E1RMKg: i.e1rm, Unit: c.user.Unit}
 	if st.Equipment != nil {
 		ctx.Equipment = &st.Equipment.Spec
 	}
@@ -534,4 +549,26 @@ func dayLinesByKey(c *catalog, doc Doc, week int, k dayKey) []string {
 		}
 	}
 	return nil
+}
+
+// AdvanceFrom moves the cursor past (week, day) of planID after that day was
+// trained, if the user follows planID and the cursor is still on that day.
+func (s *Service) AdvanceFrom(ctx context.Context, user store.User, planID string, week, day int) error {
+	a, err := s.Store.ActivePlan(ctx, user.ID)
+	if errors.Is(err, store.ErrNotFound) || (err == nil && (a.PlanID != planID || a.Week != week || a.Day != day)) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	v, err := s.Store.ActivePlanVersion(ctx, user.ID, planID)
+	if err != nil {
+		return err
+	}
+	doc, err := Decode(v.Doc)
+	if err != nil {
+		return err
+	}
+	w, d := NextPosition(doc, week, day)
+	return s.Store.SetActivePlan(ctx, user.ID, store.ActivePlan{PlanID: planID, Week: w, Day: d})
 }

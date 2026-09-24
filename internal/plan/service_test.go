@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/LongerHV/onerep/internal/exercise"
 	"github.com/LongerHV/onerep/internal/store"
@@ -31,7 +32,7 @@ func newEnv(t *testing.T) env {
 	if err := ex.EnsureStarterEquipment(ctx, alice); err != nil {
 		t.Fatal(err)
 	}
-	return env{svc: &Service{Store: db, Exercises: ex}, ex: ex, alice: alice, bob: bob}
+	return env{svc: &Service{Store: db, Exercises: ex, History: db}, ex: ex, alice: alice, bob: bob}
 }
 
 func TestStarterTemplateIsValid(t *testing.T) {
@@ -287,5 +288,62 @@ func TestPlanNameFollowsTheActiveVersion(t *testing.T) {
 	}
 	if n := name(); n != "Block A" {
 		t.Fatalf("after rolling back: %q", n)
+	}
+}
+
+// Logged sets give RPE targets a weight: the best e1RM in the user's window.
+func TestRPELoadsUseLoggedE1RM(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	raw := []byte(`{"name": "R", "weeks": 1, "days": [{"name": "A", "groups": [{"exercises": [
+		{"slug": "barbell-back-squat", "sets": [{"count": 3, "reps": 5, "load": {"rpe": 8}}]}]}]}]}`)
+	p, _, err := e.svc.Create(ctx, e.alice, raw, SaveActivate, "web", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = e.svc.Follow(ctx, e.alice, p.ID)
+	n, _ := e.svc.Next(ctx, e.alice)
+	if n.Today.Groups[0].Exercises[0].Sets[0].Kg != nil {
+		t.Fatal("without history the RPE weight must be left open")
+	}
+
+	db := e.svc.Store.(*store.DB)
+	s, _ := db.CreateSession(ctx, store.Session{UserID: e.alice.ID, Name: "log", Snapshot: []byte(`{}`)})
+	kg, reps, e1rm, now := 120.0, 5, 150.0, time.Now()
+	if _, err := db.UpsertSet(ctx, e.alice.ID, store.Set{ID: "s1", SessionID: s.ID, Slug: "barbell-back-squat", Kind: "working",
+		WeightKg: &kg, Reps: &reps, E1RMKg: &e1rm, DoneAt: &now, UpdatedAt: now}, ""); err != nil {
+		t.Fatal(err)
+	}
+	n, _ = e.svc.Next(ctx, e.alice)
+	// 5 @ RPE 8 = 81.1% of 150 = 121.65 -> 120 on the starter barbell.
+	if got := n.Today.Groups[0].Exercises[0].Sets[0].Kg; got == nil || *got != 120 {
+		t.Fatalf("RPE weight = %v", got)
+	}
+}
+
+func TestAdvanceFrom(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	p, _, _ := e.svc.Create(ctx, e.alice, weeksDoc(2), SaveActivate, "web", "")
+	_ = e.svc.Follow(ctx, e.alice, p.ID)
+
+	// Finishing a day the cursor is not on (an older session) changes nothing.
+	if err := e.svc.AdvanceFrom(ctx, e.alice, p.ID, 2, 1); err != nil {
+		t.Fatal(err)
+	}
+	if n, _ := e.svc.Next(ctx, e.alice); n.Week != 1 || n.Day != 0 {
+		t.Fatalf("cursor moved: (%d, %d)", n.Week, n.Day)
+	}
+	if err := e.svc.AdvanceFrom(ctx, e.alice, p.ID, 1, 0); err != nil {
+		t.Fatal(err)
+	}
+	if n, _ := e.svc.Next(ctx, e.alice); n.Week != 1 || n.Day != 1 {
+		t.Fatalf("cursor after finishing day 1: (%d, %d)", n.Week, n.Day)
+	}
+	if err := e.svc.AdvanceFrom(ctx, e.alice, "other-plan", 1, 1); err != nil {
+		t.Fatal(err)
+	}
+	if n, _ := e.svc.Next(ctx, e.alice); n.Day != 1 {
+		t.Fatal("another plan's session moved the cursor")
 	}
 }
