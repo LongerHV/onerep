@@ -1,0 +1,42 @@
+{
+  "name": "Upper/Lower starter",
+  "weeks": 4,
+  "days": [
+    {
+      "name": "Upper",
+      "groups": [
+        {"rest_s": 180, "exercises": [
+          {"slug": "barbell-bench-press", "alternatives": ["dumbbell-bench-press"], "sets": [
+            {"kind": "warmup", "count": 2, "reps": 5, "load": {"pct_tm": 0.5}},
+            {"count": [3, 3, 4, 2], "reps": 5, "load": {"pct_tm": [0.75, 0.8, 0.85, 0.65]}}
+          ]}
+        ]},
+        {"rest_s": 120, "exercises": [
+          {"slug": "barbell-row", "alternatives": ["seated-cable-row"], "sets": [{"count": 3, "reps": "8-10", "rpe": 8}]}
+        ]},
+        {"rest_s": 90, "exercises": [
+          {"slug": "pull-up", "alternatives": ["lat-pulldown"], "sets": [{"count": 3, "reps": "6-10", "rpe": 8}]},
+          {"slug": "dumbbell-lateral-raise", "sets": [{"count": 3, "reps": "12-15"}]}
+        ]}
+      ]
+    },
+    {
+      "name": "Lower",
+      "groups": [
+        {"rest_s": 180, "exercises": [
+          {"slug": "barbell-back-squat", "alternatives": ["hack-squat"], "sets": [
+            {"kind": "warmup", "count": 2, "reps": 5, "load": {"pct_tm": 0.5}},
+            {"count": [3, 3, 4, 2], "reps": 5, "load": {"pct_tm": [0.75, 0.8, 0.85, 0.65]}}
+          ]}
+        ]},
+        {"rest_s": 150, "exercises": [
+          {"slug": "barbell-romanian-deadlift", "sets": [{"count": 3, "reps": 8, "rpe": 7}]}
+        ]},
+        {"rest_s": 60, "exercises": [
+          {"slug": "standing-calf-raise", "sets": [{"count": 3, "reps": "10-15"}]},
+          {"slug": "plank", "sets": [{"count": 3, "duration_s": 45}]}
+        ]}
+      ]
+    }
+  ]
+}
