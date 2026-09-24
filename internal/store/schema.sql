@@ -92,3 +92,39 @@ CREATE TABLE training_max_log (
 );
 
 CREATE INDEX training_max_log_user_slug ON training_max_log (user_id, slug, created_at);
+
+CREATE TABLE plans (
+  id         TEXT    NOT NULL PRIMARY KEY,
+  user_id    TEXT    NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+  name       TEXT    NOT NULL,
+  archived   INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT    NOT NULL
+);
+
+CREATE INDEX plans_user_id ON plans (user_id);
+
+-- Every save creates a version. Active and superseded versions are immutable;
+-- at most one version of a plan is active.
+CREATE TABLE plan_versions (
+  id         TEXT    NOT NULL PRIMARY KEY,
+  plan_id    TEXT    NOT NULL REFERENCES plans (id) ON DELETE CASCADE,
+  version    INTEGER NOT NULL,
+  doc        TEXT    NOT NULL, -- the plan as authored (JSON)
+  status     TEXT    NOT NULL CHECK (status IN ('draft', 'active', 'superseded')),
+  source     TEXT    NOT NULL CHECK (source IN ('web', 'mcp')),
+  note       TEXT    NOT NULL DEFAULT '',
+  created_at TEXT    NOT NULL,
+  UNIQUE (plan_id, version)
+);
+
+CREATE UNIQUE INDEX plan_versions_one_active ON plan_versions (plan_id) WHERE status = 'active';
+
+-- The plan a user is following and the next day to train (spec §8).
+-- cursor_week past the plan's last week means the block is complete.
+CREATE TABLE active_plan (
+  user_id     TEXT    NOT NULL PRIMARY KEY REFERENCES users (id) ON DELETE CASCADE,
+  plan_id     TEXT    NOT NULL REFERENCES plans (id) ON DELETE CASCADE,
+  cursor_week INTEGER NOT NULL,
+  cursor_day  INTEGER NOT NULL,
+  updated_at  TEXT    NOT NULL
+);
