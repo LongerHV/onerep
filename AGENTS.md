@@ -8,6 +8,7 @@ onerep is a self-hosted gym progress tracker: a single Go binary serving a PWA (
 
 - Design spec: `docs/superpowers/specs/2026-09-23-onerep-v1-design.md`. Read it before changing behaviour.
 - Implementation plans: `docs/superpowers/plans/`. One plan per milestone.
+- Known minor issues, deferred on purpose: `docs/backlog.md`. Fix entries when you touch that code, and remove them when fixed.
 
 ## Environment
 
