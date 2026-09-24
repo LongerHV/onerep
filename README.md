@@ -34,6 +34,19 @@ provider. See `deploy/compose.yaml` for a compose example.
 Commands: `onerep serve` (default), `onerep migrate`, `onerep backup <path>`.
 For continuous backups, run [Litestream](https://litestream.io) next to the database.
 
+## Connecting an AI assistant (MCP)
+
+onerep includes an [MCP](https://modelcontextprotocol.io) server, so an assistant such as Claude can analyse your training and draft plans for you.
+
+1. In onerep, open **Settings → API tokens** and create a token. It is shown once, so copy it.
+2. Point your assistant at `<ONEREP_BASE_URL>/mcp` (Streamable HTTP) with the header `Authorization: Bearer <token>`. In Claude Code:
+
+   ```sh
+   claude mcp add --transport http onerep https://onerep.example.com/mcp --header "Authorization: Bearer onerep_…"
+   ```
+
+The assistant acts as you. It can read your workouts, stats and weekly volume, search and create exercises, set training maxes, and save plan **drafts**. It can't change logged workouts or activate a plan: every draft comes with a link to its comparison page, where you review it and then activate or discard it. Two prompts get you started: `review_block` (analyse your last block and propose the next) and `build_plan` (plan from scratch). You can revoke a token on the same settings page at any time.
+
 ## License
 
 onerep is licensed under the [GNU Affero General Public License v3.0](LICENSE).
