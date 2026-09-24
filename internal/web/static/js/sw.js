@@ -16,7 +16,10 @@ const SHELL_FILES = [
 ];
 
 self.addEventListener("install", (event) => {
-  event.waitUntil(caches.open(SHELL).then((c) => c.addAll(SHELL_FILES)).then(() => self.skipWaiting()));
+  // cache: "reload" skips the HTTP cache (static files are max-age=3600), so a
+  // new release never stores the previous release's files.
+  const fresh = SHELL_FILES.map((url) => new Request(url, { cache: "reload" }));
+  event.waitUntil(caches.open(SHELL).then((c) => c.addAll(fresh)).then(() => self.skipWaiting()));
 });
 
 self.addEventListener("activate", (event) => {

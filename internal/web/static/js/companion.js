@@ -67,7 +67,7 @@ async function refreshToken() {
 }
 
 // syncStatus is shown in the header: pending count, failures, sign-in needed.
-const syncStatus = { pending: 0, failed: 0, relogin: false, offline: !navigator.onLine };
+const syncStatus = { pending: 0, failedOps: [], relogin: false, error: null, offline: !navigator.onLine };
 
 function notify() {
   for (const fn of syncListeners) fn();
@@ -75,7 +75,7 @@ function notify() {
 
 async function refreshCounts() {
   syncStatus.pending = (await idb.all("outbox")).length;
-  syncStatus.failed = (await idb.all("failed")).length;
+  syncStatus.failedOps = await idb.all("failed");
   syncStatus.offline = !navigator.onLine;
   notify();
 }
@@ -102,8 +102,13 @@ async function flush() {
         retried = true;
         continue;
       }
-      if (!res.ok) break;
+      if (!res.ok) {
+        // Say so instead of showing "unsynced" forever; retried every 30 s.
+        syncStatus.error = `sync failed (HTTP ${res.status}), will retry`;
+        break;
+      }
       syncStatus.relogin = false;
+      syncStatus.error = null;
       const { results } = await res.json();
       const { failed } = core.settle(ops, results);
       const answered = new Set(results.map((r) => r.op_id));
@@ -171,7 +176,7 @@ class Companion {
 
   async start() {
     const saved = await idb.get("sessions", this.boot.session.id).catch(() => null);
-    this.state = core.mergeServerSets(saved || core.newState(this.boot), this.boot.sets);
+    this.state = core.mergeServerSets(this.boot, saved || core.newState(this.boot), this.boot.sets);
     if (this.boot.session.finished) this.state.finished = true;
     await this.save();
     syncListeners.add(this.onSync);
@@ -271,6 +276,7 @@ class Companion {
         h("span", { "data-sync": true, class: "text-sm" })),
       h("p", { "data-rest": true, class: "mt-2 text-3xl font-semibold tabular-nums", hidden: true }),
       s.finished ? this.finishedView() : step ? this.stepView(step) : this.doneView(),
+      h("div", { "data-failed": true }, this.failedView()),
       this.overview(),
       this.notesView(),
     );
@@ -282,11 +288,44 @@ class Companion {
     const el = this.root.querySelector("[data-sync]");
     if (!el) return;
     const st = syncStatus;
+    const rejected = core.failedFor(st.failedOps, this.state.sessionId).length;
     el.replaceChildren(
       st.relogin ? h("a", { href: "/auth/login", "hx-boost": "false", class: "text-red-600 underline" }, "Sign in again to sync")
-        : st.failed > 0 ? h("span", { class: "text-red-600" }, `${st.failed} change(s) rejected`)
+        : st.error ? h("span", { class: "text-red-600" }, st.error)
         : st.pending > 0 ? h("span", { class: "text-amber-600" }, `${st.pending} unsynced${st.offline ? " (offline)" : ""}`)
-        : h("span", { class: "text-zinc-500" }, st.offline ? "offline" : "saved"));
+        : h("span", { class: "text-zinc-500" }, st.offline ? "offline" : "saved"),
+      rejected > 0 && h("span", { class: "ml-2 text-red-600" }, `· ${rejected} rejected`));
+    const list = this.root.querySelector("[data-failed]");
+    if (list) list.replaceChildren(...this.failedView());
+  }
+
+  // failedView lists this session's rejected changes with the server's reason.
+  failedView() {
+    const mine = core.failedFor(syncStatus.failedOps, this.state.sessionId);
+    if (mine.length === 0) return [];
+    const describe = (f) => (f.op === "upsert_set" ? `Set: ${setText(f.payload, this.unit)}` : f.op.replace("_", " "));
+    return [h("div", { class: "mt-4 rounded border border-red-300 p-3 text-sm dark:border-red-800" },
+      h("p", { class: "font-medium text-red-700 dark:text-red-400" }, "The server rejected these changes:"),
+      h("ul", { class: "mt-1 list-inside list-disc" }, mine.map((f) => h("li", {}, `${describe(f)}: ${f.reason}`))),
+      h("button", {
+        class: btn2 + " mt-2",
+        onclick: async () => {
+          for (const f of mine) await idb.del("failed", f.op_id);
+          await refreshCounts();
+        },
+      }, "Dismiss"))];
+  }
+
+  // submitSet validates a set form and logs it at step, or shows why not.
+  submitSet(form, t, step, measurement) {
+    const values = this.read(form, t);
+    const problem = core.validateValues(measurement, values);
+    const msg = form.querySelector("[data-error]");
+    if (problem) {
+      msg.textContent = problem;
+      return;
+    }
+    this.apply(core.logSet(this.boot, this.state, step, values));
   }
 
   stepView(step) {
@@ -302,9 +341,10 @@ class Companion {
       class: "mt-3 space-y-3",
       onsubmit: (e) => {
         e.preventDefault();
-        this.apply(core.logSet(b, this.state, step, this.read(form, t)));
+        this.submitSet(form, t, step, t.measurement);
       },
     }, fields,
+    h("p", { "data-error": true, class: "text-sm text-red-600", role: "alert" }),
     h("div", { class: "flex flex-wrap gap-2" },
       h("button", { type: "submit", class: btn }, "Done"),
       h("button", { type: "button", class: btn2, onclick: () => this.update(core.skip(this.state, step)) }, "Skip"),
@@ -374,10 +414,11 @@ class Companion {
   }
 
   doneView() {
+    const empty = core.steps(this.boot, this.state).length === 0;
     return h("section", { class: "mt-4 rounded border border-zinc-200 p-4 dark:border-zinc-800" },
-      h("p", {}, "All planned sets are done or skipped."),
+      h("p", {}, empty ? "Add an exercise to start." : "All sets are done or skipped. Add a set below, or finish."),
       h("div", { class: "mt-3 flex flex-wrap gap-2" },
-        h("button", { class: btn, onclick: () => this.finish() }, "Finish workout"),
+        !empty && h("button", { class: btn, onclick: () => this.finish() }, "Finish workout"),
         this.addExerciseControl()));
   }
 
@@ -400,59 +441,98 @@ class Companion {
     await this.apply(core.finish(this.state));
   }
 
+  // overview lists every exercise with its sets; each exercise can take
+  // another set (planned or not, e.g. in an empty workout).
   overview() {
     const b = this.boot;
     const s = this.state;
-    const items = core.steps(b, s).map((step) => {
-      const set = core.logged(s, step);
-      const t = core.target(b, s, step);
-      const st = core.status(s, step);
-      if (set && this.editing === set.id) return this.editRow(step, set, t);
-      return h("li", { class: "flex items-center justify-between gap-2 py-1", "data-status": st },
-        h("span", {}, `${t.name} · ${step.s + 1}`),
-        st === "done" ? h("button", { class: "text-sm underline", onclick: () => { this.editing = set.id; this.render(); } }, setText(set, this.unit))
-          : st === "skipped" ? h("button", { class: "text-sm text-zinc-500 underline", onclick: () => this.update(core.unskip(s, step)) }, "skipped")
-          : h("span", { class: "text-sm text-zinc-500" }, this.targetText(t)));
-    });
+    const all = core.steps(b, s);
+    const sections = [];
+    core.groups(b, s).forEach((grp, g) => grp.exercises.forEach((ex, e) => {
+      const rows = all.filter((st) => st.g === g && st.e === e).map((step) => {
+        const set = core.logged(s, step);
+        const t = core.target(b, s, step);
+        const st = core.status(s, step);
+        if (set && this.editing === set.id) return this.editRow(step, set, t);
+        return h("li", { class: "flex items-center justify-between gap-2 py-1", "data-status": st },
+          h("span", {}, `${step.s + 1}. ${set ? core.exerciseInfo(b, set.slug).name : t.name}`),
+          st === "done" ? h("button", { class: "text-sm underline", onclick: () => { this.editing = set.id; this.render(); } }, setText(set, this.unit))
+            : st === "skipped" ? h("button", { class: "text-sm text-zinc-500 underline", onclick: () => this.update(core.unskip(s, step)) }, "skipped")
+            : h("span", { class: "text-sm text-zinc-500" }, this.targetText(t)));
+      });
+      sections.push(h("li", { class: "py-2" },
+        h("div", { class: "flex items-center justify-between gap-2" },
+          h("span", { class: "font-medium" }, ex.name),
+          !s.finished && h("button", { class: btn2, onclick: () => this.update(core.addSet(s, g, e)) }, "Add set")),
+        h("ul", { class: "ml-2" }, rows)));
+    }));
     return h("details", { class: "mt-6", open: true },
       h("summary", { class: "cursor-pointer font-medium" }, "All sets"),
-      h("ul", { class: "mt-2 divide-y divide-zinc-200 dark:divide-zinc-800" }, items),
+      h("ul", { class: "mt-2 divide-y divide-zinc-200 dark:divide-zinc-800" }, sections),
       !s.finished && h("div", { class: "mt-3 flex flex-wrap gap-2" },
         this.addExerciseControl(),
         core.currentStep(b, s) && h("button", { class: btn2, onclick: () => this.finish() }, "Finish early")));
   }
 
   editRow(step, set, t) {
+    // Edit with the fields of the exercise actually done, even after a swap.
+    const measurement = core.exerciseInfo(this.boot, set.slug).measurement;
     const form = h("form", {
       class: "space-y-2 py-2",
       onsubmit: (e) => {
         e.preventDefault();
+        const values = this.read(form, t);
+        const problem = core.validateValues(measurement, values);
+        if (problem) {
+          form.querySelector("[data-error]").textContent = problem;
+          return;
+        }
         this.editing = null;
-        this.apply(core.logSet(this.boot, this.state, step, this.read(form, t)));
+        this.apply(core.logSet(this.boot, this.state, step, values));
       },
-    }, this.inputs(t, set),
+    }, this.inputs({ ...t, measurement }, set),
+    h("p", { "data-error": true, class: "text-sm text-red-600", role: "alert" }),
     h("div", { class: "flex gap-2" },
       h("button", { type: "submit", class: btn }, "Save"),
       h("button", { type: "button", class: btn2, onclick: () => { this.editing = null; this.apply(core.deleteSet(this.state, set.id)); } }, "Delete"),
       h("button", { type: "button", class: btn2, onclick: () => { this.editing = null; this.render(); } }, "Cancel")));
-    return h("li", {}, h("p", { class: "text-sm font-medium" }, `${t.name} · ${step.s + 1}`), form);
+    return h("li", {}, form);
   }
 
   notesView() {
-    const area = h("textarea", { class: input + " text-base", rows: "2", "aria-label": "Notes" });
-    area.value = this.state.notes;
+    // Keep what is typed across re-renders (every logged set re-renders).
+    const area = h("textarea", {
+      class: input + " text-base", rows: "2", "aria-label": "Notes",
+      oninput: () => (this.notesDraft = area.value),
+    });
+    area.value = this.notesDraft ?? this.state.notes;
     return h("label", { class: "mt-6 block text-sm" }, "Notes",
       area,
-      h("button", { class: btn2 + " mt-2", onclick: () => this.apply(core.editNotes(this.state, area.value)) }, "Save notes"));
+      h("button", {
+        class: btn2 + " mt-2",
+        onclick: () => {
+          this.notesDraft = null;
+          this.apply(core.editNotes(this.state, area.value));
+        },
+      }, "Save notes"));
   }
 }
 
 let current = null;
 
+// started holds workout screens already set up. It lives here rather than in
+// a data attribute because htmx's history cache restores the DOM (attributes
+// included) without the event handlers, and that restored copy needs a
+// fresh start.
+const started = new WeakSet();
+
 htmx.onLoad((root) => {
   const el = root.id === "companion" ? root : root.querySelector?.("#companion");
-  if (!el || el.dataset.started) return;
-  el.dataset.started = "1";
+  if (!el || started.has(el)) return;
+  started.add(el);
+  // A copy restored from htmx's history cache still shows buttons with no
+  // handlers; clear it right away so nothing can be tapped until start() renders.
+  el.replaceChildren(h("p", { class: "text-zinc-500" }, "Loading your workout…"));
   const boot = JSON.parse(document.getElementById("companion-boot").textContent);
   current?.stop();
   current = new Companion(el, boot);

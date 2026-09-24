@@ -172,6 +172,29 @@ try {
   const again = await evaluate(`fetch('/history/${sessionID}').then(r => r.text())`);
   check("reloading does not duplicate sets", (again.match(/name="set_id"/g) || []).length === 3);
 
+  // A value the server would reject is refused on the spot, not queued.
+  await evaluate(`document.querySelector('input[name=rpe]').value = '80'; ${doneButton}.click()`);
+  await sleep(300);
+  check("an impossible RPE is refused with a message",
+    (await evaluate(`document.querySelector('#companion').textContent.includes('RPE must be between 1 and 10')`)) && (await done()) === 3);
+
+  // Notes typed but not saved survive logging a set.
+  await evaluate(`const n = document.querySelector('#companion textarea'); n.value = 'left knee ok'; n.dispatchEvent(new Event('input'))`);
+  await evaluate(`document.querySelector('input[name=rpe]').value = ''; ${doneButton}.click()`);
+  await waitFor(async () => (await done()) === 4, "set 4");
+  check("typed notes survive logging a set", await evaluate(`document.querySelector('#companion textarea').value === 'left knee ok'`));
+
+  // One more set, then leave the workout and come back with the Back button.
+  await evaluate(`[...document.querySelectorAll('#companion button')].find(b => b.textContent.trim() === 'Add set').click()`);
+  await waitFor(() => evaluate(`!!${doneButton}`), "the added set");
+  await evaluate(`document.querySelector('nav a[href="/history"]').click()`);
+  await waitFor(() => evaluate(`location.pathname === '/history'`), "the history page");
+  await evaluate("history.back()");
+  await waitFor(() => evaluate(`!!${doneButton}`), "the workout screen after Back");
+  await evaluate(`${doneButton}.click()`);
+  await waitFor(async () => (await serverSets()) === 5, "set 5 after Back").catch(() => {});
+  check("the workout screen works after Back", (await serverSets()) === 5, `server has ${await serverSets()} sets`);
+
   // Finish: the plan moves on to its second day.
   await evaluate(`[...document.querySelectorAll('#companion button')].find(b => /Finish/.test(b.textContent)).click()`);
   await waitFor(() => evaluate(`document.querySelector('#companion').textContent.includes('Workout finished')`), "the finished screen");
@@ -179,6 +202,23 @@ try {
   await waitFor(async () => (home = await evaluate(`fetch('/').then(r => r.text())`)).includes("Next: Second day"), "the plan to move on")
     .catch(() => {});
   check("finishing advances the plan", home.includes("Next: Second day"), (home.match(/<main[\s\S]*?<\/main>/) || [""])[0].replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").slice(0, 400));
+
+  // An empty workout: add an exercise, log a set, add another set and log it.
+  await go("/");
+  await evaluate(`[...document.querySelectorAll('button')].find(b => b.textContent.trim() === 'Start an empty workout').click()`);
+  const addExercise = `document.querySelector('#companion select[aria-label="Add exercise"]')`;
+  await waitFor(() => evaluate(`!!${addExercise}`), "the empty workout screen");
+  const adhocID = await evaluate("location.pathname.split('/')[2]");
+  await evaluate(`const s = ${addExercise}; s.value = 'dumbbell-curl'; s.dispatchEvent(new Event('change'))`);
+  await waitFor(() => evaluate(`!!${doneButton}`), "the curl set");
+  await evaluate(`document.querySelector('input[name=weight]').value = '12'; document.querySelector('input[name=reps]').value = '10'; ${doneButton}.click()`);
+  await waitFor(async () => (await done()) === 1, "curl set 1");
+  await evaluate(`[...document.querySelectorAll('#companion button')].find(b => b.textContent.trim() === 'Add set').click()`);
+  await waitFor(() => evaluate(`!!${doneButton}`), "curl set 2");
+  await evaluate(`document.querySelector('input[name=reps]').value = '8'; ${doneButton}.click()`);
+  const adhocSets = () => evaluate(`fetch("/history/${adhocID}").then(r => r.text()).then(t => (t.match(/name="set_id"/g) || []).length)`);
+  await waitFor(async () => (await adhocSets()) === 2, "both curl sets on the server").catch(() => {});
+  check("an empty workout can log several sets of an exercise", (await adhocSets()) === 2, `server has ${await adhocSets()}`);
 } catch (err) {
   check("scenario ran to the end", false, err.stack || String(err));
 } finally {
