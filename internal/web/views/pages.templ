@@ -4,21 +4,25 @@ import "strconv"
 
 templ Home(p Page) {
 	@Layout(p) {
-		<h1 class="text-2xl font-semibold">Hi, { p.Identity.User.Name }</h1>
+		<h1 class={ h1 }>Hi, { p.Identity.User.Name }</h1>
 		<p class="mt-2 text-zinc-600 dark:text-zinc-400">No training plan yet.</p>
+		<ul class="mt-6 list-inside list-disc space-y-1">
+			<li><a href="/exercises" class="underline">Browse exercises</a> and set training maxes</li>
+			<li><a href="/equipment" class="underline">Set up your equipment</a> so weights round to what you can load</li>
+		</ul>
 	}
 }
 
 templ SignedOut(p Page) {
 	@Layout(p) {
-		<h1 class="text-2xl font-semibold">Signed out</h1>
+		<h1 class={ h1 }>Signed out</h1>
 		<p class="mt-2"><a href="/auth/login" class="underline">Sign in again</a></p>
 	}
 }
 
 templ Error(p Page, status int, message, requestID string) {
 	@Layout(p) {
-		<h1 class="text-2xl font-semibold">{ strconv.Itoa(status) }</h1>
+		<h1 class={ h1 }>{ strconv.Itoa(status) }</h1>
 		<p class="mt-2">{ message }</p>
 		if requestID != "" {
 			<p class="mt-4 text-sm text-zinc-500">Request ID: <code>{ requestID }</code></p>

@@ -12,8 +12,10 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/LongerHV/onerep/internal/account"
 	"github.com/LongerHV/onerep/internal/auth"
 	"github.com/LongerHV/onerep/internal/config"
+	"github.com/LongerHV/onerep/internal/exercise"
 	"github.com/LongerHV/onerep/internal/store"
 	"github.com/LongerHV/onerep/internal/web"
 )
@@ -94,8 +96,17 @@ func serve(ctx context.Context, cfg config.Config) error {
 	}
 	defer db.Close()
 
+	if err := exercise.Seed(ctx, db); err != nil {
+		return err
+	}
+
 	sessions := &auth.Sessions{Store: db, Secure: cfg.SecureCookies()}
-	srv := &web.Server{DB: db, Sessions: sessions}
+	srv := &web.Server{
+		DB:        db,
+		Sessions:  sessions,
+		Exercises: &exercise.Service{Store: db},
+		Account:   &account.Service{Store: db},
+	}
 	if cfg.OIDC.Issuer != "" {
 		srv.OIDC, err = auth.NewOIDC(ctx, cfg.OIDC.Issuer, cfg.OIDC.ClientID, cfg.OIDC.ClientSecret, cfg.BaseURL, sessions)
 		if err != nil {

@@ -19,12 +19,19 @@ templ Layout(p Page) {
 			}
 		>
 			<header class="border-b border-zinc-200 dark:border-zinc-800">
-				<nav class="mx-auto flex max-w-3xl items-center justify-between px-4 py-3">
-					<a href="/" class="text-lg font-semibold">onerep</a>
+				<nav class="mx-auto flex max-w-3xl flex-wrap items-center justify-between gap-2 px-4 py-3">
+					<div class="flex items-center gap-4">
+						<a href="/" class="text-lg font-semibold">onerep</a>
+						if p.Identity != nil {
+							<a href="/exercises" class="text-sm hover:underline">Exercises</a>
+							<a href="/equipment" class="text-sm hover:underline">Equipment</a>
+							<a href="/settings" class="text-sm hover:underline">Settings</a>
+						}
+					</div>
 					if p.Identity != nil {
 						<form method="post" action="/auth/logout" class="flex items-center gap-3 text-sm">
 							<span>{ p.Identity.User.Name }</span>
-							<input type="hidden" name={ auth.CSRFField } value={ p.Identity.CSRFToken }/>
+							@CSRF(p)
 							<button type="submit" class="rounded px-2 py-1 hover:bg-zinc-200 dark:hover:bg-zinc-800">Log out</button>
 						</form>
 					}
@@ -38,4 +45,17 @@ templ Layout(p Page) {
 			</footer>
 		</body>
 	</html>
+}
+
+// CSRF is the hidden token field every POST form needs.
+templ CSRF(p Page) {
+	if p.Identity != nil {
+		<input type="hidden" name={ auth.CSRFField } value={ p.Identity.CSRFToken }/>
+	}
+}
+
+templ fieldError(errs map[string]string, field string) {
+	if msg, ok := errs[field]; ok {
+		<p class={ errorText }>{ msg }</p>
+	}
 }

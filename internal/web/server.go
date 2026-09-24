@@ -11,7 +11,9 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 
+	"github.com/LongerHV/onerep/internal/account"
 	"github.com/LongerHV/onerep/internal/auth"
+	"github.com/LongerHV/onerep/internal/exercise"
 	"github.com/LongerHV/onerep/internal/store"
 	"github.com/LongerHV/onerep/internal/web/views"
 )
@@ -22,6 +24,9 @@ type Server struct {
 	Sessions *auth.Sessions
 	OIDC     *auth.OIDC // nil when only the dev bypass is configured
 	DevUser  string     // non-empty enables the dev login bypass
+
+	Exercises *exercise.Service
+	Account   *account.Service
 }
 
 // Routes returns the application's HTTP handler.
@@ -50,9 +55,13 @@ func (s *Server) Routes() http.Handler {
 		if s.DevUser != "" {
 			r.Use(auth.DevLogin(s.Sessions, s.DevUser))
 		}
-		r.Use(auth.RequireUser, auth.CSRF)
+		r.Use(auth.RequireUser, auth.CSRF, s.starterEquipment)
 		r.Get("/", s.home)
 		r.Post("/auth/logout", s.logout)
+		s.exerciseRoutes(r)
+		s.equipmentRoutes(r)
+		r.Get("/settings", s.settings)
+		r.Post("/settings", s.saveSettings)
 	})
 	return r
 }
@@ -126,4 +135,32 @@ func (s *Server) logout(w http.ResponseWriter, r *http.Request) {
 		slog.ErrorContext(r.Context(), "logout", "err", err)
 	}
 	http.Redirect(w, r, "/auth/signed-out", http.StatusSeeOther)
+}
+
+// user returns the signed-in user. Only call it behind auth.RequireUser.
+func user(r *http.Request) store.User {
+	id, _ := auth.FromContext(r.Context())
+	return id.User
+}
+
+// fail renders the error page for err: 404 for missing (or other users')
+// resources, 500 otherwise.
+func (s *Server) fail(w http.ResponseWriter, r *http.Request, err error) {
+	if errors.Is(err, store.ErrNotFound) {
+		s.renderError(w, r, http.StatusNotFound, "Not found.")
+		return
+	}
+	slog.ErrorContext(r.Context(), "request failed", "err", err, "request_id", middleware.GetReqID(r.Context()))
+	s.renderError(w, r, http.StatusInternalServerError, "Something went wrong.")
+}
+
+// starterEquipment creates a new user's starter equipment on their first request.
+func (s *Server) starterEquipment(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := s.Exercises.EnsureStarterEquipment(r.Context(), user(r)); err != nil {
+			s.fail(w, r, err)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }

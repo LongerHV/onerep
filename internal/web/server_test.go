@@ -1,6 +1,7 @@
 package web
 
 import (
+	"context"
 	"io"
 	"net/http"
 	"net/http/cookiejar"
@@ -10,22 +11,36 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/LongerHV/onerep/internal/account"
 	"github.com/LongerHV/onerep/internal/auth"
+	"github.com/LongerHV/onerep/internal/exercise"
+	"github.com/LongerHV/onerep/internal/store"
 	"github.com/LongerHV/onerep/internal/store/storetest"
 )
 
 // newApp serves the full router with the given dev user ("" disables the bypass).
 func newApp(t *testing.T, devUser string) (*httptest.Server, *http.Client) {
 	t.Helper()
+	srv, c, _ := newAppDB(t, devUser)
+	return srv, c
+}
+
+// newAppDB is newApp that also returns the database, with the catalog seeded.
+func newAppDB(t *testing.T, devUser string) (*httptest.Server, *http.Client, *store.DB) {
+	t.Helper()
 	db := storetest.New(t)
-	s := &Server{DB: db, Sessions: &auth.Sessions{Store: db}, DevUser: devUser}
+	if err := exercise.Seed(context.Background(), db); err != nil {
+		t.Fatal(err)
+	}
+	s := &Server{DB: db, Sessions: &auth.Sessions{Store: db}, DevUser: devUser,
+		Exercises: &exercise.Service{Store: db}, Account: &account.Service{Store: db}}
 	srv := httptest.NewServer(s.Routes())
 	t.Cleanup(srv.Close)
 	jar, _ := cookiejar.New(nil)
 	client := &http.Client{Jar: jar, CheckRedirect: func(*http.Request, []*http.Request) error {
 		return http.ErrUseLastResponse
 	}}
-	return srv, client
+	return srv, client, db
 }
 
 func read(t *testing.T, resp *http.Response) string {
