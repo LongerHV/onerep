@@ -28,14 +28,14 @@ func (db *DB) CreateAuthSession(ctx context.Context, s AuthSession) error {
 func (db *DB) AuthSessionByHash(ctx context.Context, idHash string, now time.Time) (AuthSession, User, error) {
 	row := db.read.QueryRowContext(ctx, `
 		SELECT s.id_hash, s.user_id, s.csrf_token, s.expires_at, s.created_at,
-		       u.id, u.oidc_issuer, u.oidc_sub, u.email, u.name, u.unit, u.e1rm_window_days, u.created_at
+		       u.id, u.oidc_issuer, u.oidc_sub, u.email, u.name, u.unit, u.e1rm_window_days, u.equipment_initialized, u.created_at
 		FROM auth_sessions s JOIN users u ON u.id = s.user_id
 		WHERE s.id_hash = ? AND s.expires_at > ?`, idHash, formatTime(now))
 	var s AuthSession
 	var u User
 	var sExp, sCreated, uCreated string
 	err := row.Scan(&s.IDHash, &s.UserID, &s.CSRFToken, &sExp, &sCreated,
-		&u.ID, &u.OIDCIssuer, &u.OIDCSubject, &u.Email, &u.Name, &u.Unit, &u.E1RMWindowDays, &uCreated)
+		&u.ID, &u.OIDCIssuer, &u.OIDCSubject, &u.Email, &u.Name, &u.Unit, &u.E1RMWindowDays, &u.EquipmentInitialized, &uCreated)
 	if errors.Is(err, sql.ErrNoRows) {
 		return AuthSession{}, User{}, ErrNotFound
 	}
