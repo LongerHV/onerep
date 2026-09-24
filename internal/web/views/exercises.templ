@@ -7,27 +7,25 @@ import (
 )
 
 templ ExerciseList(p Page, query string, exercises []store.Exercise) {
-	@Layout(p) {
-		<div class="flex items-center justify-between">
-			<h1 class={ h1 }>Exercises</h1>
-			<a href="/exercises/new" class={ btn }>New exercise</a>
-		</div>
-		<input
-			type="search"
-			name="q"
-			value={ query }
-			placeholder="Search by name, muscle or equipment"
-			aria-label="Search exercises"
-			class={ input + " mt-4" }
-			hx-get="/exercises"
-			hx-trigger="input changed delay:200ms, search"
-			hx-target="#exercise-results"
-			hx-push-url="true"
-		/>
-		<div id="exercise-results" class="mt-4">
-			@ExerciseResults(exercises)
-		</div>
-	}
+	<div class="flex items-center justify-between">
+		<h1 class={ h1 }>Exercises</h1>
+		<a href="/exercises/new" class={ btn }>New exercise</a>
+	</div>
+	<input
+		type="search"
+		name="q"
+		value={ query }
+		placeholder="Search by name, muscle or equipment"
+		aria-label="Search exercises"
+		class={ input + " mt-4" }
+		hx-get="/exercises"
+		hx-trigger="input changed delay:200ms, search"
+		hx-target="#exercise-results"
+		hx-push-url="true"
+	/>
+	<div id="exercise-results" class="mt-4">
+		@ExerciseResults(exercises)
+	</div>
 }
 
 templ ExerciseResults(exercises []store.Exercise) {
@@ -54,149 +52,149 @@ templ ExerciseResults(exercises []store.Exercise) {
 }
 
 templ ExerciseDetailPage(p Page, d ExerciseDetail) {
-	@Layout(p) {
-		<div class="flex flex-wrap items-start justify-between gap-2">
-			<div>
-				<h1 class={ h1 }>{ d.Exercise.Name }</h1>
-				<p class="text-sm text-zinc-500">
-					{ d.Exercise.Slug }
-					if d.Exercise.Overrides {
-						<span class={ badge }>customized</span>
-					} else if d.Exercise.Custom() {
-						<span class={ badge }>custom</span>
-					}
-				</p>
-			</div>
-			<div class="flex gap-2">
-				<a href={ templ.URL("/exercises/" + d.Exercise.Slug + "/edit") } class={ btnSecondary }>
-					if d.Exercise.Custom() {
-						Edit
-					} else {
-						Customize
-					}
-				</a>
-				if d.Exercise.Custom() {
-					<form method="post" action={ templ.URL("/exercises/" + d.Exercise.Slug + "/delete") }>
-						@CSRF(p)
-						<button type="submit" class={ btnDanger }>
-							if d.Exercise.Overrides {
-								Reset to default
-							} else {
-								Delete
-							}
-						</button>
-					</form>
+	<div class="flex flex-wrap items-start justify-between gap-2">
+		<div>
+			<h1 class={ h1 }>{ d.Exercise.Name }</h1>
+			<p class="text-sm text-zinc-500">
+				{ d.Exercise.Slug }
+				if d.Exercise.Overrides {
+					<span class={ badge }>customized</span>
+				} else if d.Exercise.Custom() {
+					<span class={ badge }>custom</span>
 				}
-			</div>
+			</p>
 		</div>
-		<dl class="mt-4 grid grid-cols-[max-content_1fr] gap-x-4 gap-y-1 text-sm">
-			<dt class="text-zinc-500">Recorded as</dt>
-			<dd>{ MeasurementLabel(d.Exercise.Measurement) }</dd>
-			<dt class="text-zinc-500">Equipment</dt>
-			<dd>{ Label(d.Exercise.EquipmentKind) }</dd>
-			<dt class="text-zinc-500">Primary</dt>
-			<dd>{ joinLabels(d.Exercise.PrimaryMuscles) }</dd>
-			if len(d.Exercise.SecondaryMuscles) > 0 {
-				<dt class="text-zinc-500">Secondary</dt>
-				<dd>{ joinLabels(d.Exercise.SecondaryMuscles) }</dd>
-			}
-			if len(d.Exercise.Aliases) > 0 {
-				<dt class="text-zinc-500">Also known as</dt>
-				<dd>{ joinLabels(d.Exercise.Aliases) }</dd>
-			}
-		</dl>
-		<h2 class={ h2 }>Your settings</h2>
-		<form method="post" action={ templ.URL("/exercises/" + d.Exercise.Slug + "/settings") } class={ card + " mt-2 grid gap-4 sm:grid-cols-2" }>
-			@CSRF(p)
-			<label class={ label }>
-				Equipment for rounding
-				<select name="equipment_id" class={ input }>
-					<option value="">
-						Default for { Label(d.Exercise.EquipmentKind) }
-						if d.Settings.Equipment != nil && !d.Settings.Linked {
-							({ d.Settings.Equipment.Name })
-						} else if d.Settings.Equipment == nil {
-							(none, round to 0.5 kg / 1 lb)
+		<div class="flex gap-2">
+			<a href={ templ.URL("/exercises/" + d.Exercise.Slug + "/edit") } class={ btnSecondary }>
+				if d.Exercise.Custom() {
+					Edit
+				} else {
+					Customize
+				}
+			</a>
+			if d.Exercise.Custom() {
+				<form method="post" action={ templ.URL("/exercises/" + d.Exercise.Slug + "/delete") }>
+					@CSRF(p)
+					<button type="submit" class={ btnDanger }>
+						if d.Exercise.Overrides {
+							Reset to default
+						} else {
+							Delete
 						}
-					</option>
-					for _, e := range d.Equipment {
-						<option value={ e.ID } selected?={ d.Settings.EquipmentID == e.ID }>{ e.Name } ({ Label(e.Spec.Kind) })</option>
-					}
-				</select>
-			</label>
-			<label class={ label }>
-				Training max ({ p.Identity.User.Unit })
-				<input type="text" inputmode="decimal" name="training_max" value={ d.TMInput } placeholder="not set" class={ input }/>
-				@fieldError(d.Errors, "training_max")
-			</label>
-			<div class="sm:col-span-2">
-				<button type="submit" class={ btn }>Save</button>
-			</div>
-		</form>
-		if d.Settings.TrainingMaxKg != nil {
-			<div class={ card + " mt-4" }>
-				<label class={ label }>
-					Percent of training max
-					<input
-						type="number"
-						name="pct"
-						value="75"
-						min="1"
-						max="150"
-						step="0.5"
-						class={ input + " max-w-32" }
-						hx-get={ "/exercises/" + d.Exercise.Slug + "/calc" }
-						hx-trigger="load, input changed delay:200ms"
-						hx-target="#calc-result"
-					/>
-				</label>
-				<div id="calc-result" class="mt-2" aria-live="polite"></div>
-			</div>
-		}
-		if len(d.History) > 0 {
-			<h2 class={ h2 }>Training max history</h2>
-			<table class="mt-2 w-full text-sm">
-				<thead class="text-left text-zinc-500">
-					<tr><th class="py-1">When</th><th>From</th><th>To</th><th>By</th></tr>
-				</thead>
-				<tbody>
-					for _, h := range d.History {
-						<tr class="border-t border-zinc-200 dark:border-zinc-800">
-							<td class="py-1">{ h.CreatedAt.Format("2006-01-02 15:04") }</td>
-							<td>@optionalWeight(h.OldKg, p.Identity.User.Unit)</td>
-							<td>@optionalWeight(h.NewKg, p.Identity.User.Unit)</td>
-							<td>{ h.Source }</td>
-						</tr>
-					}
-				</tbody>
-			</table>
-		}
-		<h2 class={ h2 }>Alternatives</h2>
-		<p class={ hint }>Exercises to use when the equipment for this one is taken.</p>
-		<ul class="mt-2 space-y-1">
-			for _, a := range d.Alternatives {
-				<li class="flex items-center justify-between gap-2">
-					<a href={ templ.URL("/exercises/" + a.Exercise.Slug) } class="underline">{ a.Exercise.Name }</a>
-					if a.UserAdded {
-						<form method="post" action={ templ.URL("/exercises/" + d.Exercise.Slug + "/alternatives/" + a.Exercise.Slug + "/delete") }>
-							@CSRF(p)
-							<button type="submit" class="text-sm text-zinc-500 hover:underline">Remove</button>
-						</form>
-					}
-				</li>
+					</button>
+				</form>
 			}
-		</ul>
-		<form method="post" action={ templ.URL("/exercises/" + d.Exercise.Slug + "/alternatives") } class="mt-3 flex gap-2">
-			@CSRF(p)
-			<select name="alternative" aria-label="Add alternative" class={ input + " mt-0" }>
-				for _, c := range d.Candidates {
-					<option value={ c.Slug }>{ c.Name }</option>
+		</div>
+	</div>
+	<dl class="mt-4 grid grid-cols-[max-content_1fr] gap-x-4 gap-y-1 text-sm">
+		<dt class="text-zinc-500">Recorded as</dt>
+		<dd>{ MeasurementLabel(d.Exercise.Measurement) }</dd>
+		<dt class="text-zinc-500">Equipment</dt>
+		<dd>{ Label(d.Exercise.EquipmentKind) }</dd>
+		<dt class="text-zinc-500">Primary</dt>
+		<dd>{ joinLabels(d.Exercise.PrimaryMuscles) }</dd>
+		if len(d.Exercise.SecondaryMuscles) > 0 {
+			<dt class="text-zinc-500">Secondary</dt>
+			<dd>{ joinLabels(d.Exercise.SecondaryMuscles) }</dd>
+		}
+		if len(d.Exercise.Aliases) > 0 {
+			<dt class="text-zinc-500">Also known as</dt>
+			<dd>{ joinLabels(d.Exercise.Aliases) }</dd>
+		}
+	</dl>
+	<h2 class={ h2 }>Your settings</h2>
+	<form method="post" action={ templ.URL("/exercises/" + d.Exercise.Slug + "/settings") } class={ card + " mt-2 grid gap-4 sm:grid-cols-2" }>
+		@CSRF(p)
+		<label class={ label }>
+			Equipment for rounding
+			<select name="equipment_id" class={ input }>
+				<option value="">
+					Default for { Label(d.Exercise.EquipmentKind) }
+					if d.Settings.Equipment != nil && !d.Settings.Linked {
+						({ d.Settings.Equipment.Name })
+					} else if d.Settings.Equipment == nil {
+						(none, round to 0.5 kg / 1 lb)
+					}
+				</option>
+				for _, e := range d.Equipment {
+					<option value={ e.ID } selected?={ d.Settings.EquipmentID == e.ID }>{ e.Name } ({ Label(e.Spec.Kind) })</option>
 				}
 			</select>
-			<button type="submit" class={ btnSecondary }>Add</button>
-		</form>
-		@fieldError(d.Errors, "alternative")
+		</label>
+		<label class={ label }>
+			Training max ({ p.Identity.User.Unit })
+			<input type="text" inputmode="decimal" name="training_max" value={ d.TMInput } placeholder="not set" class={ input }/>
+			@fieldError(d.Errors, "training_max")
+		</label>
+		<div class="sm:col-span-2">
+			<button type="submit" class={ btn }>Save</button>
+		</div>
+	</form>
+	if d.Settings.TrainingMaxKg != nil {
+		<div class={ card + " mt-4" }>
+			<label class={ label }>
+				Percent of training max
+				<input
+					type="number"
+					name="pct"
+					value="75"
+					min="1"
+					max="150"
+					step="0.5"
+					class={ input + " max-w-32" }
+					hx-get={ "/exercises/" + d.Exercise.Slug + "/calc" }
+					hx-trigger="load, input changed delay:200ms"
+					hx-target="#calc-result"
+				/>
+			</label>
+			<div id="calc-result" class="mt-2" aria-live="polite"></div>
+		</div>
 	}
+	if len(d.History) > 0 {
+		<h2 class={ h2 }>Training max history</h2>
+		<table class="mt-2 w-full text-sm">
+			<thead class="text-left text-zinc-500">
+				<tr><th class="py-1">When</th><th>From</th><th>To</th><th>By</th></tr>
+			</thead>
+			<tbody>
+				for _, h := range d.History {
+					<tr class="border-t border-zinc-200 dark:border-zinc-800">
+						<td class="py-1">{ h.CreatedAt.Format("2006-01-02 15:04") }</td>
+						<td>@optionalWeight(h.OldKg, p.Identity.User.Unit)
+</td>
+						<td>@optionalWeight(h.NewKg, p.Identity.User.Unit)
+</td>
+						<td>{ h.Source }</td>
+					</tr>
+				}
+			</tbody>
+		</table>
+	}
+	<h2 class={ h2 }>Alternatives</h2>
+	<p class={ hint }>Exercises to use when the equipment for this one is taken.</p>
+	<ul class="mt-2 space-y-1">
+		for _, a := range d.Alternatives {
+			<li class="flex items-center justify-between gap-2">
+				<a href={ templ.URL("/exercises/" + a.Exercise.Slug) } class="underline">{ a.Exercise.Name }</a>
+				if a.UserAdded {
+					<form method="post" action={ templ.URL("/exercises/" + d.Exercise.Slug + "/alternatives/" + a.Exercise.Slug + "/delete") }>
+						@CSRF(p)
+						<button type="submit" class="text-sm text-zinc-500 hover:underline">Remove</button>
+					</form>
+				}
+			</li>
+		}
+	</ul>
+	<form method="post" action={ templ.URL("/exercises/" + d.Exercise.Slug + "/alternatives") } class="mt-3 flex gap-2">
+		@CSRF(p)
+		<select name="alternative" aria-label="Add alternative" class={ input + " mt-0" }>
+			for _, c := range d.Candidates {
+				<option value={ c.Slug }>{ c.Name }</option>
+			}
+		</select>
+		<button type="submit" class={ btnSecondary }>Add</button>
+	</form>
+	@fieldError(d.Errors, "alternative")
 }
 
 templ optionalWeight(kg *float64, unit string) {
@@ -219,74 +217,72 @@ templ CalcResultFragment(unit string, r CalcResult) {
 }
 
 templ ExerciseFormPage(p Page, f ExerciseForm) {
-	@Layout(p) {
-		<h1 class={ h1 }>
-			if f.New {
-				New exercise
-			} else {
-				Edit { f.Input.Name }
-			}
-		</h1>
-		<form
-			method="post"
-			if f.New {
-				action="/exercises"
-			} else {
-				action={ templ.URL("/exercises/" + f.Input.Slug) }
-			}
-			class="mt-4 space-y-4"
-		>
-			@CSRF(p)
+	<h1 class={ h1 }>
+		if f.New {
+			New exercise
+		} else {
+			Edit { f.Input.Name }
+		}
+	</h1>
+	<form
+		method="post"
+		if f.New {
+			action="/exercises"
+		} else {
+			action={ templ.URL("/exercises/" + f.Input.Slug) }
+		}
+		class="mt-4 space-y-4"
+	>
+		@CSRF(p)
+		<label class={ label }>
+			Name
+			<input type="text" name="name" value={ f.Input.Name } required class={ input }/>
+			@fieldError(f.Errors, "name")
+		</label>
+		if f.New {
 			<label class={ label }>
-				Name
-				<input type="text" name="name" value={ f.Input.Name } required class={ input }/>
-				@fieldError(f.Errors, "name")
+				Slug
+				<input type="text" name="slug" value={ f.Input.Slug } required pattern="[a-z0-9]+(-[a-z0-9]+)*" class={ input }/>
+				<p class={ hint }>Permanent ID used by plans, like zercher-squat.</p>
+				@fieldError(f.Errors, "slug")
 			</label>
-			if f.New {
-				<label class={ label }>
-					Slug
-					<input type="text" name="slug" value={ f.Input.Slug } required pattern="[a-z0-9]+(-[a-z0-9]+)*" class={ input }/>
-					<p class={ hint }>Permanent ID used by plans, like zercher-squat.</p>
-					@fieldError(f.Errors, "slug")
-				</label>
-			}
-			<div class="grid gap-4 sm:grid-cols-2">
-				<label class={ label }>
-					Recorded as
-					<select name="measurement" class={ input }>
-						for _, m := range exercise.Measurements {
-							<option value={ m } selected?={ f.Input.Measurement == m }>{ MeasurementLabel(m) }</option>
-						}
-					</select>
-					@fieldError(f.Errors, "measurement")
-				</label>
-				<label class={ label }>
-					Equipment
-					<select name="equipment_kind" class={ input }>
-						for _, k := range calc.Kinds {
-							<option value={ k } selected?={ f.Input.EquipmentKind == k }>{ Label(k) }</option>
-						}
-					</select>
-					@fieldError(f.Errors, "equipment_kind")
-				</label>
-			</div>
-			@muscleChoice("Primary muscles", "primary_muscles", f.Input.PrimaryMuscles, f.Errors)
-			@muscleChoice("Secondary muscles", "secondary_muscles", f.Input.SecondaryMuscles, f.Errors)
+		}
+		<div class="grid gap-4 sm:grid-cols-2">
 			<label class={ label }>
-				Other names
-				<input type="text" name="aliases" value={ f.AliasesText } class={ input }/>
-				<p class={ hint }>Comma-separated. Used by search.</p>
+				Recorded as
+				<select name="measurement" class={ input }>
+					for _, m := range exercise.Measurements {
+						<option value={ m } selected?={ f.Input.Measurement == m }>{ MeasurementLabel(m) }</option>
+					}
+				</select>
+				@fieldError(f.Errors, "measurement")
 			</label>
-			<div class="flex gap-2">
-				<button type="submit" class={ btn }>Save</button>
-				if f.New {
-					<a href="/exercises" class={ btnSecondary }>Cancel</a>
-				} else {
-					<a href={ templ.URL("/exercises/" + f.Input.Slug) } class={ btnSecondary }>Cancel</a>
-				}
-			</div>
-		</form>
-	}
+			<label class={ label }>
+				Equipment
+				<select name="equipment_kind" class={ input }>
+					for _, k := range calc.Kinds {
+						<option value={ k } selected?={ f.Input.EquipmentKind == k }>{ Label(k) }</option>
+					}
+				</select>
+				@fieldError(f.Errors, "equipment_kind")
+			</label>
+		</div>
+		@muscleChoice("Primary muscles", "primary_muscles", f.Input.PrimaryMuscles, f.Errors)
+		@muscleChoice("Secondary muscles", "secondary_muscles", f.Input.SecondaryMuscles, f.Errors)
+		<label class={ label }>
+			Other names
+			<input type="text" name="aliases" value={ f.AliasesText } class={ input }/>
+			<p class={ hint }>Comma-separated. Used by search.</p>
+		</label>
+		<div class="flex gap-2">
+			<button type="submit" class={ btn }>Save</button>
+			if f.New {
+				<a href="/exercises" class={ btnSecondary }>Cancel</a>
+			} else {
+				<a href={ templ.URL("/exercises/" + f.Input.Slug) } class={ btnSecondary }>Cancel</a>
+			}
+		</div>
+	</form>
 }
 
 templ muscleChoice(title, name string, selected []string, errs map[string]string) {

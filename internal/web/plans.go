@@ -97,7 +97,7 @@ func (s *Server) planPreview(w http.ResponseWriter, r *http.Request) {
 	if !ps.HasErrors() {
 		weeks = s.Plans.Preview(r.Context(), u, doc)
 	}
-	render(w, r, http.StatusOK, views.PlanPreview(page(r, ""), ps, weeks))
+	render(w, r, http.StatusOK, views.PlanPreview(fragmentPage(r), ps, weeks))
 }
 
 func (s *Server) planDetail(w http.ResponseWriter, r *http.Request) {

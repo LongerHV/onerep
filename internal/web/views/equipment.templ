@@ -6,128 +6,124 @@ import (
 )
 
 templ EquipmentList(p Page, items []store.Equipment) {
-	@Layout(p) {
-		<h1 class={ h1 }>Equipment</h1>
-		<p class="mt-1 text-sm text-zinc-500">
-			Calculated weights are rounded down to what these can load. Exercises use the
-			default profile for their kind unless linked to another one.
-		</p>
-		if len(items) == 0 {
-			<p class="mt-4">No equipment yet. Weights round to 0.5 kg / 1 lb.</p>
-		}
-		<ul class="mt-4 space-y-2">
-			for _, e := range items {
-				<li class={ card + " flex items-start justify-between gap-4" }>
-					<div>
-						<p class="font-medium">
-							{ e.Name }
-							<span class={ badge }>{ Label(e.Spec.Kind) }</span>
-							if e.IsDefault {
-								<span class={ badge }>default</span>
-							}
-						</p>
-						<p class="text-sm text-zinc-500">{ EquipmentSummary(e) }</p>
-					</div>
-					<a href={ templ.URL("/equipment/" + e.ID + "/edit") } class={ btnSecondary }>Edit</a>
-				</li>
-			}
-		</ul>
-		<h2 class={ h2 }>Add equipment</h2>
-		<div class="mt-2 flex flex-wrap gap-2">
-			for _, k := range calc.Kinds {
-				<a href={ templ.URL("/equipment/new?kind=" + k) } class={ btnSecondary }>{ Label(k) }</a>
-			}
-		</div>
+	<h1 class={ h1 }>Equipment</h1>
+	<p class="mt-1 text-sm text-zinc-500">
+		Calculated weights are rounded down to what these can load. Exercises use the
+		default profile for their kind unless linked to another one.
+	</p>
+	if len(items) == 0 {
+		<p class="mt-4">No equipment yet. Weights round to 0.5 kg / 1 lb.</p>
 	}
+	<ul class="mt-4 space-y-2">
+		for _, e := range items {
+			<li class={ card + " flex items-start justify-between gap-4" }>
+				<div>
+					<p class="font-medium">
+						{ e.Name }
+						<span class={ badge }>{ Label(e.Spec.Kind) }</span>
+						if e.IsDefault {
+							<span class={ badge }>default</span>
+						}
+					</p>
+					<p class="text-sm text-zinc-500">{ EquipmentSummary(e) }</p>
+				</div>
+				<a href={ templ.URL("/equipment/" + e.ID + "/edit") } class={ btnSecondary }>Edit</a>
+			</li>
+		}
+	</ul>
+	<h2 class={ h2 }>Add equipment</h2>
+	<div class="mt-2 flex flex-wrap gap-2">
+		for _, k := range calc.Kinds {
+			<a href={ templ.URL("/equipment/new?kind=" + k) } class={ btnSecondary }>{ Label(k) }</a>
+		}
+	</div>
 }
 
 templ EquipmentFormPage(p Page, f EquipmentForm) {
-	@Layout(p) {
-		<h1 class={ h1 }>
-			if f.ID == "" {
-				New { Label(f.Kind) }
-			} else {
-				Edit { f.Name }
-			}
-		</h1>
-		<form
-			method="post"
-			if f.ID == "" {
-				action="/equipment"
-			} else {
-				action={ templ.URL("/equipment/" + f.ID) }
-			}
-			class="mt-4 space-y-4"
-		>
-			@CSRF(p)
-			<input type="hidden" name="kind" value={ f.Kind }/>
-			<div class="grid gap-4 sm:grid-cols-2">
-				<label class={ label }>
-					Name
-					<input type="text" name="name" value={ f.Name } required class={ input }/>
-					@fieldError(f.Errors, "name")
-				</label>
-				<label class={ label }>
-					Unit
-					<select name="unit" class={ input }>
-						<option value="kg" selected?={ f.Unit == "kg" }>kg</option>
-						<option value="lb" selected?={ f.Unit == "lb" }>lb</option>
-					</select>
-				</label>
-			</div>
-			switch f.Kind {
-				case calc.KindBarbell:
-					<div class="grid gap-4 sm:grid-cols-2">
-						<label class={ label }>
-							Bar weight
-							<input type="text" inputmode="decimal" name="bar" value={ f.Bar } class={ input }/>
-							@fieldError(f.Errors, "bar")
-						</label>
-						<label class={ label }>
-							Plates
-							<input type="text" name="plates" value={ f.Plates } class={ input }/>
-							<p class={ hint }>Sizes you have, like 25, 20, 15, 10, 5, 2.5, 1.25</p>
-							@fieldError(f.Errors, "plates")
-						</label>
-					</div>
-					<label class={ label }>
-						Limited plates (optional)
-						<input type="text" name="plate_pairs" value={ f.PlatePairs } class={ input }/>
-						<p class={ hint }>Size and number of pairs for sizes you have few of, like 1.25:1, 2.5:2</p>
-						@fieldError(f.Errors, "plate_pairs")
-					</label>
-				case calc.KindDumbbell:
-					<label class={ label }>
-						Dumbbell weights
-						<input type="text" name="weights" value={ f.Weights } class={ input }/>
-						<p class={ hint }>Comma-separated; ranges like 2-50/2 mean 2, 4, … 50.</p>
-						@fieldError(f.Errors, "weights")
-					</label>
-				case calc.KindMachine, calc.KindCable:
-					<label class={ label }>
-						Weight stack
-						<input type="text" name="stack" value={ f.Stack } class={ input }/>
-						<p class={ hint }>Comma-separated; ranges like 5-100/5 mean 5, 10, … 100.</p>
-						@fieldError(f.Errors, "stack")
-					</label>
-				default:
-					<p class={ hint }>Bodyweight loads round to 0.5 kg or 1 lb.</p>
-			}
-			@fieldError(f.Errors, "config")
-			<label class="flex items-center gap-2 text-sm">
-				<input type="checkbox" name="is_default" value="1" checked?={ f.IsDefault }/>
-				Default for { Label(f.Kind) } exercises
-			</label>
-			<div class="flex gap-2">
-				<button type="submit" class={ btn }>Save</button>
-				<a href="/equipment" class={ btnSecondary }>Cancel</a>
-			</div>
-		</form>
-		if f.ID != "" {
-			<form method="post" action={ templ.URL("/equipment/" + f.ID + "/delete") } class="mt-8">
-				@CSRF(p)
-				<button type="submit" class={ btnDanger }>Delete</button>
-			</form>
+	<h1 class={ h1 }>
+		if f.ID == "" {
+			New { Label(f.Kind) }
+		} else {
+			Edit { f.Name }
 		}
+	</h1>
+	<form
+		method="post"
+		if f.ID == "" {
+			action="/equipment"
+		} else {
+			action={ templ.URL("/equipment/" + f.ID) }
+		}
+		class="mt-4 space-y-4"
+	>
+		@CSRF(p)
+		<input type="hidden" name="kind" value={ f.Kind }/>
+		<div class="grid gap-4 sm:grid-cols-2">
+			<label class={ label }>
+				Name
+				<input type="text" name="name" value={ f.Name } required class={ input }/>
+				@fieldError(f.Errors, "name")
+			</label>
+			<label class={ label }>
+				Unit
+				<select name="unit" class={ input }>
+					<option value="kg" selected?={ f.Unit == "kg" }>kg</option>
+					<option value="lb" selected?={ f.Unit == "lb" }>lb</option>
+				</select>
+			</label>
+		</div>
+		switch f.Kind {
+			case calc.KindBarbell:
+				<div class="grid gap-4 sm:grid-cols-2">
+					<label class={ label }>
+						Bar weight
+						<input type="text" inputmode="decimal" name="bar" value={ f.Bar } class={ input }/>
+						@fieldError(f.Errors, "bar")
+					</label>
+					<label class={ label }>
+						Plates
+						<input type="text" name="plates" value={ f.Plates } class={ input }/>
+						<p class={ hint }>Sizes you have, like 25, 20, 15, 10, 5, 2.5, 1.25</p>
+						@fieldError(f.Errors, "plates")
+					</label>
+				</div>
+				<label class={ label }>
+					Limited plates (optional)
+					<input type="text" name="plate_pairs" value={ f.PlatePairs } class={ input }/>
+					<p class={ hint }>Size and number of pairs for sizes you have few of, like 1.25:1, 2.5:2</p>
+					@fieldError(f.Errors, "plate_pairs")
+				</label>
+			case calc.KindDumbbell:
+				<label class={ label }>
+					Dumbbell weights
+					<input type="text" name="weights" value={ f.Weights } class={ input }/>
+					<p class={ hint }>Comma-separated; ranges like 2-50/2 mean 2, 4, … 50.</p>
+					@fieldError(f.Errors, "weights")
+				</label>
+			case calc.KindMachine, calc.KindCable:
+				<label class={ label }>
+					Weight stack
+					<input type="text" name="stack" value={ f.Stack } class={ input }/>
+					<p class={ hint }>Comma-separated; ranges like 5-100/5 mean 5, 10, … 100.</p>
+					@fieldError(f.Errors, "stack")
+				</label>
+			default:
+				<p class={ hint }>Bodyweight loads round to 0.5 kg or 1 lb.</p>
+		}
+		@fieldError(f.Errors, "config")
+		<label class="flex items-center gap-2 text-sm">
+			<input type="checkbox" name="is_default" value="1" checked?={ f.IsDefault }/>
+			Default for { Label(f.Kind) } exercises
+		</label>
+		<div class="flex gap-2">
+			<button type="submit" class={ btn }>Save</button>
+			<a href="/equipment" class={ btnSecondary }>Cancel</a>
+		</div>
+	</form>
+	if f.ID != "" {
+		<form method="post" action={ templ.URL("/equipment/" + f.ID + "/delete") } class="mt-8">
+			@CSRF(p)
+			<button type="submit" class={ btnDanger }>Delete</button>
+		</form>
 	}
 }

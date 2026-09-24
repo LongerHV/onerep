@@ -35,14 +35,14 @@ type Server struct {
 func (s *Server) Routes() http.Handler {
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID, logRequests, s.recoverer, s.Sessions.Middleware)
-	r.NotFound(func(w http.ResponseWriter, r *http.Request) {
+	r.NotFound(s.layout(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		s.renderError(w, r, http.StatusNotFound, "Page not found.")
-	})
+	})).ServeHTTP)
 
 	r.Get("/healthz", s.healthz)
 	r.Get("/schema/plan.json", planSchema)
 	r.Handle("/static/*", staticHandler())
-	r.Get("/auth/signed-out", func(w http.ResponseWriter, r *http.Request) {
+	r.With(s.layout).Get("/auth/signed-out", func(w http.ResponseWriter, r *http.Request) {
 		render(w, r, http.StatusOK, views.SignedOut(page(r, "Signed out")))
 	})
 	if s.OIDC != nil {
@@ -55,6 +55,7 @@ func (s *Server) Routes() http.Handler {
 	}
 
 	r.Group(func(r chi.Router) {
+		r.Use(s.layout)
 		if s.DevUser != "" {
 			r.Use(auth.DevLogin(s.Sessions, s.DevUser))
 		}
@@ -70,9 +71,19 @@ func (s *Server) Routes() http.Handler {
 	return r
 }
 
-// page builds the common page data for r.
+// page builds the data for a page titled title and marks the response as a
+// page, so the layout middleware wraps it (see layout.go).
 func page(r *http.Request, title string) views.Page {
-	p := views.Page{Title: title}
+	p := fragmentPage(r)
+	p.Title = title
+	markPage(r, p)
+	return p
+}
+
+// fragmentPage is the page data for rendering a fragment, which the layout
+// middleware leaves alone.
+func fragmentPage(r *http.Request) views.Page {
+	var p views.Page
 	if id, ok := auth.FromContext(r.Context()); ok {
 		p.Identity = &id
 	}
@@ -100,7 +111,9 @@ func (s *Server) recoverer(next http.Handler) http.Handler {
 					panic(v)
 				}
 				slog.ErrorContext(r.Context(), "panic", "value", v, "request_id", middleware.GetReqID(r.Context()))
-				s.renderError(w, r, http.StatusInternalServerError, "Something went wrong.")
+				s.layout(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					s.renderError(w, r, http.StatusInternalServerError, "Something went wrong.")
+				})).ServeHTTP(w, r)
 			}
 		}()
 		next.ServeHTTP(w, r)

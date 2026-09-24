@@ -3,30 +3,28 @@ package views
 import "strconv"
 
 templ SettingsPage(p Page, saved bool, errMsg string) {
-	@Layout(p) {
-		<h1 class={ h1 }>Settings</h1>
-		if saved {
-			<p class="mt-2 text-sm text-green-700 dark:text-green-400">Saved.</p>
-		}
-		<form method="post" action="/settings" class="mt-4 max-w-sm space-y-4">
-			@CSRF(p)
-			<label class={ label }>
-				Units
-				<select name="unit" class={ input }>
-					<option value="kg" selected?={ p.Identity.User.Unit == "kg" }>Kilograms (kg)</option>
-					<option value="lb" selected?={ p.Identity.User.Unit == "lb" }>Pounds (lb)</option>
-				</select>
-				<p class={ hint }>Weights are stored exactly; this only changes how they are shown and entered.</p>
-			</label>
-			<label class={ label }>
-				e1RM window (days)
-				<input type="number" name="e1rm_window_days" min="7" max="365" value={ strconv.Itoa(p.Identity.User.E1RMWindowDays) } class={ input }/>
-				<p class={ hint }>RPE-based weights use your best estimated 1RM from this many recent days.</p>
-			</label>
-			if errMsg != "" {
-				<p class={ errorText }>{ errMsg }</p>
-			}
-			<button type="submit" class={ btn }>Save</button>
-		</form>
+	<h1 class={ h1 }>Settings</h1>
+	if saved {
+		<p class="mt-2 text-sm text-green-700 dark:text-green-400">Saved.</p>
 	}
+	<form method="post" action="/settings" class="mt-4 max-w-sm space-y-4">
+		@CSRF(p)
+		<label class={ label }>
+			Units
+			<select name="unit" class={ input }>
+				<option value="kg" selected?={ p.Identity.User.Unit == "kg" }>Kilograms (kg)</option>
+				<option value="lb" selected?={ p.Identity.User.Unit == "lb" }>Pounds (lb)</option>
+			</select>
+			<p class={ hint }>Weights are stored exactly; this only changes how they are shown and entered.</p>
+		</label>
+		<label class={ label }>
+			e1RM window (days)
+			<input type="number" name="e1rm_window_days" min="7" max="365" value={ strconv.Itoa(p.Identity.User.E1RMWindowDays) } class={ input }/>
+			<p class={ hint }>RPE-based weights use your best estimated 1RM from this many recent days.</p>
+		</label>
+		if errMsg != "" {
+			<p class={ errorText }>{ errMsg }</p>
+		}
+		<button type="submit" class={ btn }>Save</button>
+	</form>
 }

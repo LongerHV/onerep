@@ -3,74 +3,67 @@ package views
 import "strconv"
 
 templ Home(p Page, h HomePage) {
-	@Layout(p) {
-		<h1 class={ h1 }>Hi, { p.Identity.User.Name }</h1>
-		if h.Notice != "" {
-			<p class="mt-4 rounded bg-amber-100 p-2 text-sm dark:bg-amber-950">{ h.Notice }</p>
-		}
-		switch {
-			case h.Next == nil:
-				<p class="mt-2 text-zinc-600 dark:text-zinc-400">
-					You are not following a plan. <a href="/plans" class="underline">Choose or create one</a>.
+	<h1 class={ h1 }>Hi, { p.Identity.User.Name }</h1>
+	if h.Notice != "" {
+		<p class="mt-4 rounded bg-amber-100 p-2 text-sm dark:bg-amber-950">{ h.Notice }</p>
+	}
+	switch  {
+		case h.Next == nil:
+			<p class="mt-2 text-zinc-600 dark:text-zinc-400">
+				You are not following a plan. <a href="/plans" class="underline">Choose or create one</a>.
+			</p>
+			<ul class="mt-6 list-inside list-disc space-y-1">
+				<li><a href="/exercises" class="underline">Browse exercises</a> and set training maxes</li>
+				<li><a href="/equipment" class="underline">Set up your equipment</a> so weights round to what you can load</li>
+			</ul>
+		case h.Next.Complete:
+			<div class={ card + " mt-4" }>
+				<p>
+					You finished all { strconv.Itoa(h.Next.Doc.Weeks) } weeks of
+					<a href={ templ.URL("/plans/" + h.Next.Plan.ID) } class="underline">{ h.Next.Plan.Name }</a>.
 				</p>
-				<ul class="mt-6 list-inside list-disc space-y-1">
-					<li><a href="/exercises" class="underline">Browse exercises</a> and set training maxes</li>
-					<li><a href="/equipment" class="underline">Set up your equipment</a> so weights round to what you can load</li>
-				</ul>
-			case h.Next.Complete:
-				<div class={ card + " mt-4" }>
-					<p>
-						You finished all { strconv.Itoa(h.Next.Doc.Weeks) } weeks of
-						<a href={ templ.URL("/plans/" + h.Next.Plan.ID) } class="underline">{ h.Next.Plan.Name }</a>.
-					</p>
-					<p class="mt-1 text-sm text-zinc-500">Raise your training maxes and run it again, or ask your AI assistant to draft the next block.</p>
-					<form method="post" action="/plan/restart" class="mt-3">
+				<p class="mt-1 text-sm text-zinc-500">Raise your training maxes and run it again, or ask your AI assistant to draft the next block.</p>
+				<form method="post" action="/plan/restart" class="mt-3">
+					@CSRF(p)
+					<button type="submit" class={ btn }>Start the block again</button>
+				</form>
+			</div>
+		default:
+			<div class="mt-4">
+				<p class="text-sm text-zinc-500">
+					<a href={ templ.URL("/plans/" + h.Next.Plan.ID) } class="underline">{ h.Next.Plan.Name }</a>
+					· week { strconv.Itoa(h.Next.Week) } of { strconv.Itoa(h.Next.Doc.Weeks) }
+				</p>
+				<h2 class="text-xl font-semibold">Next: { h.Next.Today.Name }</h2>
+				@PlanDay(p, h.Next.Today)
+				<div class="mt-3 flex flex-wrap items-center gap-2">
+					<form method="post" action="/plan/skip">
 						@CSRF(p)
-						<button type="submit" class={ btn }>Start the block again</button>
+						<button type="submit" class={ btnSecondary }>Skip this day</button>
+					</form>
+					<form method="post" action="/plan/choose" class="flex gap-2">
+						@CSRF(p)
+						<select name="position" aria-label="Train another day" class={ input + " mt-0" }>
+							for _, o := range DayOptions(h.Next.Doc) {
+								<option value={ o.Value } selected?={ o.Week == h.Next.Week && o.Day == h.Next.Day }>{ o.Label }</option>
+							}
+						</select>
+						<button type="submit" class={ btnSecondary }>Go to day</button>
 					</form>
 				</div>
-			default:
-				<div class="mt-4">
-					<p class="text-sm text-zinc-500">
-						<a href={ templ.URL("/plans/" + h.Next.Plan.ID) } class="underline">{ h.Next.Plan.Name }</a>
-						· week { strconv.Itoa(h.Next.Week) } of { strconv.Itoa(h.Next.Doc.Weeks) }
-					</p>
-					<h2 class="text-xl font-semibold">Next: { h.Next.Today.Name }</h2>
-					@PlanDay(p, h.Next.Today)
-					<div class="mt-3 flex flex-wrap items-center gap-2">
-						<form method="post" action="/plan/skip">
-							@CSRF(p)
-							<button type="submit" class={ btnSecondary }>Skip this day</button>
-						</form>
-						<form method="post" action="/plan/choose" class="flex gap-2">
-							@CSRF(p)
-							<select name="position" aria-label="Train another day" class={ input + " mt-0" }>
-								for _, o := range DayOptions(h.Next.Doc) {
-									<option value={ o.Value } selected?={ o.Week == h.Next.Week && o.Day == h.Next.Day }>{ o.Label }</option>
-								}
-							</select>
-							<button type="submit" class={ btnSecondary }>Go to day</button>
-						</form>
-					</div>
-				</div>
-		}
+			</div>
 	}
 }
 
-
 templ SignedOut(p Page) {
-	@Layout(p) {
-		<h1 class={ h1 }>Signed out</h1>
-		<p class="mt-2"><a href="/auth/login" class="underline">Sign in again</a></p>
-	}
+	<h1 class={ h1 }>Signed out</h1>
+	<p class="mt-2"><a href="/auth/login" class="underline" hx-boost="false">Sign in again</a></p>
 }
 
 templ Error(p Page, status int, message, requestID string) {
-	@Layout(p) {
-		<h1 class={ h1 }>{ strconv.Itoa(status) }</h1>
-		<p class="mt-2">{ message }</p>
-		if requestID != "" {
-			<p class="mt-4 text-sm text-zinc-500">Request ID: <code>{ requestID }</code></p>
-		}
+	<h1 class={ h1 }>{ strconv.Itoa(status) }</h1>
+	<p class="mt-2">{ message }</p>
+	if requestID != "" {
+		<p class="mt-4 text-sm text-zinc-500">Request ID: <code>{ requestID }</code></p>
 	}
 }

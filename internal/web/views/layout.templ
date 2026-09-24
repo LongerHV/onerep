@@ -9,11 +9,17 @@ templ Layout(p Page) {
 			<meta charset="utf-8"/>
 			<meta name="viewport" content="width=device-width, initial-scale=1"/>
 			<title>{ p.Title } · onerep</title>
+			<meta name="htmx-config" content={ htmxConfig }/>
 			<link rel="stylesheet" href="/static/app.css"/>
+			<link rel="stylesheet" href="/static/vendor/jsoneditor/jse-theme-dark.css"/>
 			<script src="/static/vendor/htmx.min.js" defer></script>
+			<script type="module" src="/static/js/plan-editor.js"></script>
 		</head>
 		<body
 			class="min-h-screen bg-zinc-50 text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100"
+			hx-boost="true"
+			hx-target="#main"
+			hx-swap="innerHTML show:window:top"
 			if p.Identity != nil {
 				hx-headers={ csrfHeaders(p.Identity.CSRFToken) }
 			}
@@ -23,13 +29,14 @@ templ Layout(p Page) {
 					<div class="flex items-center gap-4">
 						<a href="/" class="text-lg font-semibold">onerep</a>
 						if p.Identity != nil {
+							<a href="/plans" class="text-sm hover:underline">Plans</a>
 							<a href="/exercises" class="text-sm hover:underline">Exercises</a>
 							<a href="/equipment" class="text-sm hover:underline">Equipment</a>
 							<a href="/settings" class="text-sm hover:underline">Settings</a>
 						}
 					</div>
 					if p.Identity != nil {
-						<form method="post" action="/auth/logout" class="flex items-center gap-3 text-sm">
+						<form method="post" action="/auth/logout" hx-boost="false" class="flex items-center gap-3 text-sm">
 							<span>{ p.Identity.User.Name }</span>
 							@CSRF(p)
 							<button type="submit" class="rounded px-2 py-1 hover:bg-zinc-200 dark:hover:bg-zinc-800">Log out</button>
@@ -37,7 +44,7 @@ templ Layout(p Page) {
 					}
 				</nav>
 			</header>
-			<main class="mx-auto max-w-3xl px-4 py-6">
+			<main id="main" class="mx-auto max-w-3xl px-4 py-6">
 				{ children... }
 			</main>
 			<footer class="mx-auto max-w-3xl px-4 py-6 text-sm text-zinc-500">
