@@ -271,7 +271,7 @@ class Companion {
     const b = this.boot;
     const s = this.state;
     const step = s.finished ? null : core.currentStep(b, s);
-    this.root.replaceChildren(
+    this.root.replaceChildren(...[
       h("div", { class: "flex items-center justify-between" },
         h("h1", { class: "text-2xl font-semibold" }, b.session.name),
         h("span", { "data-sync": true, class: "text-sm" })),
@@ -284,7 +284,7 @@ class Companion {
       h("div", { "data-failed": true }, this.failedView()),
       this.overview(),
       this.notesView(),
-    );
+    ].filter(Boolean)); // replaceChildren would print null and false as text
     this.renderSync();
     this.tick();
   }
@@ -299,7 +299,7 @@ class Companion {
         : st.error ? h("span", { class: "text-red-600" }, st.error)
         : st.pending > 0 ? h("span", { class: "text-amber-600" }, `${st.pending} unsynced${st.offline ? " (offline)" : ""}`)
         : h("span", { class: "text-zinc-500" }, st.offline ? "offline" : "saved"),
-      rejected > 0 && h("span", { class: "ml-2 text-red-600" }, `· ${rejected} rejected`));
+      rejected > 0 ? h("span", { class: "ml-2 text-red-600" }, `· ${rejected} rejected`) : "");
     const list = this.root.querySelector("[data-failed]");
     if (list) list.replaceChildren(...this.failedView());
   }
