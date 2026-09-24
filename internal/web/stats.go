@@ -1,15 +1,12 @@
 package web
 
 import (
-	"errors"
-	"log/slog"
 	"math"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
 
 	"github.com/LongerHV/onerep/internal/calc"
-	"github.com/LongerHV/onerep/internal/store"
 	"github.com/LongerHV/onerep/internal/web/views"
 )
 
@@ -34,12 +31,8 @@ type e1rmPoint struct {
 func (s *Server) apiE1RM(w http.ResponseWriter, r *http.Request) {
 	u := user(r)
 	st, err := s.Stats.ExerciseStats(r.Context(), u, chi.URLParam(r, "slug"))
-	if errors.Is(err, store.ErrNotFound) {
-		writeJSON(w, http.StatusNotFound, map[string]string{"error": "exercise not found"})
-		return
-	}
 	if err != nil {
-		s.apiFail(w, r, err)
+		s.failJSON(w, r, err)
 		return
 	}
 	points := make([]e1rmPoint, 0, len(st.Series))
@@ -58,7 +51,7 @@ type muscleSeries struct {
 func (s *Server) apiMuscles(w http.ResponseWriter, r *http.Request) {
 	mw, err := s.Stats.RecentMuscleSets(r.Context(), user(r), MuscleWeeks)
 	if err != nil {
-		s.apiFail(w, r, err)
+		s.failJSON(w, r, err)
 		return
 	}
 	weeks := make([]string, 0, len(mw.Weeks))
@@ -70,12 +63,6 @@ func (s *Server) apiMuscles(w http.ResponseWriter, r *http.Request) {
 		muscles = append(muscles, muscleSeries{Muscle: m.Muscle, Label: views.Label(m.Muscle), Sets: m.Sets})
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"weeks": weeks, "muscles": muscles})
-}
-
-// apiFail logs an unexpected error and answers with JSON, not an HTML page.
-func (s *Server) apiFail(w http.ResponseWriter, r *http.Request, err error) {
-	slog.ErrorContext(r.Context(), "api request failed", "path", r.URL.Path, "err", err)
-	writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "server error"})
 }
 
 func (s *Server) statsMuscles(w http.ResponseWriter, r *http.Request) {

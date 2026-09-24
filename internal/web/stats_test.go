@@ -3,12 +3,17 @@ package web
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/go-chi/chi/v5/middleware"
+
 	"github.com/LongerHV/onerep/internal/auth"
+	"github.com/LongerHV/onerep/internal/stats"
 	"github.com/LongerHV/onerep/internal/store"
 )
 
@@ -181,5 +186,39 @@ func TestHistoryShowsPRBadges(t *testing.T) {
 	}
 	if html := read(t, mustGet(t, c, srv.URL+"/history/"+old.ID)); strings.Contains(html, `data-pr-badge`) {
 		t.Error("the first set at a rep count is not a PR")
+	}
+}
+
+// brokenStats fails every query, to reach the API's server-error path.
+type brokenStats struct{}
+
+var errBroken = errors.New("disk on fire")
+
+func (brokenStats) RepMaxes(context.Context, string, string, string) ([]store.RepMax, error) {
+	return nil, errBroken
+}
+func (brokenStats) E1RMSeries(context.Context, string, string) ([]store.E1RMPoint, error) {
+	return nil, errBroken
+}
+func (brokenStats) SessionPRs(context.Context, string, string) (map[string]bool, error) {
+	return nil, errBroken
+}
+func (brokenStats) HardSets(context.Context, string, time.Time, time.Time) ([]store.HardSet, error) {
+	return nil, errBroken
+}
+
+// A failed chart request carries the request id (spec §16), so it can be
+// matched to the server log.
+func TestStatsAPIErrorsCarryRequestID(t *testing.T) {
+	s := &Server{Stats: &stats.Service{Store: brokenStats{}}}
+	h := middleware.RequestID(http.HandlerFunc(s.apiMuscles))
+	req := httptest.NewRequest(http.MethodGet, "/api/stats/muscles", nil)
+	req = req.WithContext(auth.WithIdentity(req.Context(), auth.Identity{User: store.User{ID: "u"}}))
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	var body map[string]string
+	_ = json.Unmarshal(rec.Body.Bytes(), &body)
+	if rec.Code != http.StatusInternalServerError || body["request_id"] == "" {
+		t.Fatalf("server error = %d %s, want 500 with a request_id", rec.Code, rec.Body)
 	}
 }
