@@ -1,5 +1,6 @@
-h1:dEy2C8aDrqIXPhI9KrA/hfx6fjz5yqcGQg/1fG3jNIU=
+h1:WuUrJSUI/ktt8ESv9Us7BcgcuDafk5a+8j6HQwfArFE=
 20260923200502_init.up.sql h1:Oo/ok2hmJTSY2NY8fX1YQ5CCd0HPrmSBfd+sOZypbhI=
 20260924071337_catalog_equipment.up.sql h1:Gd9zp+P1Gol1L3oOYg3ZTm/ou1CAIxSXqV4dgK5ewnk=
 20260924092056_plans.up.sql h1:dPRGJlf2DJRY53/hh1dK6yZMBSwB67Za8yKtU2nsptQ=
 20260924102409_sessions.up.sql h1:w2FJf+GC34g/tzFHpC0QyuPCOZ/RxtsWnXZGAN751cU=
+20260924103502_applied_ops_per_user.up.sql h1:iWUWzXibkiJVF/n07wWXtCnfV0TP5fnjDFU+3mYnd8s=

@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"math"
 	"regexp"
 	"time"
@@ -190,7 +191,11 @@ func (s *Service) toStore(ctx context.Context, user store.User, in SetInput) (st
 	set := store.Set{
 		ID: in.ID, SessionID: in.SessionID, Slug: in.Slug, GroupPos: in.GroupPos, ExercisePos: in.ExercisePos,
 		SetPos: in.SetPos, Kind: in.Kind, WeightKg: in.WeightKg, Reps: in.Reps, RPE: in.RPE,
-		DurationS: in.DurationS, DistanceM: in.DistanceM, DoneAt: in.DoneAt, UpdatedAt: s.clamp(in.UpdatedAt),
+		DurationS: in.DurationS, DistanceM: in.DistanceM, UpdatedAt: s.clamp(in.UpdatedAt),
+	}
+	if in.DoneAt != nil {
+		done := s.clamp(*in.DoneAt) // a phone clock years ahead must not date sets in the future
+		set.DoneAt = &done
 	}
 	if len(in.Prescribed) > 0 && string(in.Prescribed) != "null" {
 		set.Prescribed = []byte(in.Prescribed)
@@ -261,7 +266,10 @@ func (s *Service) ApplyOps(ctx context.Context, user store.User, ops []Op) ([]Op
 		case errors.Is(err, store.ErrNotFound):
 			res.Status, res.Reason = "rejected", "unknown session or set"
 		case err != nil:
-			return results, err
+			// Report it and go on: failing the whole batch would make the
+			// client retry the same operations forever.
+			slog.ErrorContext(ctx, "sync op failed", "op_id", op.OpID, "op", op.Op, "err", err)
+			res.Status, res.Reason = "rejected", "server error"
 		case outcome == store.Duplicate:
 			res.Status = "duplicate"
 		default:

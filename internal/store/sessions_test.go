@@ -155,3 +155,18 @@ func withE1RM(s Set, kg float64) Set {
 	s.E1RMKg = &kg
 	return s
 }
+
+// Operation ids are scoped per user: another user's op with the same id is
+// applied, not reported as a duplicate or turned into a server error.
+func TestOpIDsArePerUser(t *testing.T) {
+	db := newTestDB(t)
+	ctx := context.Background()
+	alice, bob := newUser(t, db, "alice"), newUser(t, db, "bob")
+	sa, sb := newSession(t, db, alice.ID, "A"), newSession(t, db, bob.ID, "B")
+	if out, err := db.UpsertSet(ctx, alice.ID, set(sa.ID, "a-1", 100, t0), "shared-op"); err != nil || out != Applied {
+		t.Fatalf("alice: %v %v", out, err)
+	}
+	if out, err := db.UpsertSet(ctx, bob.ID, set(sb.ID, "b-1", 100, t0), "shared-op"); err != nil || out != Applied {
+		t.Fatalf("bob: %v %v", out, err)
+	}
+}

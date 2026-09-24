@@ -217,6 +217,64 @@ func TestFutureTimestampsAreClamped(t *testing.T) {
 	if len(sets) != 1 || sets[0].UpdatedAt.After(time.Now().Add(6*time.Minute)) {
 		t.Fatalf("updated_at not clamped: %+v", sets)
 	}
+	// done_at too: a set from 2036 would count as "recent" for e1RM for a decade.
+	if sets[0].DoneAt == nil || sets[0].DoneAt.After(time.Now().Add(6*time.Minute)) {
+		t.Fatalf("done_at not clamped: %v", sets[0].DoneAt)
+	}
+}
+
+// failingStore fails the upsert of one set id with a server-side error.
+type failingStore struct {
+	Store
+	failID string
+}
+
+func (f failingStore) UpsertSet(ctx context.Context, userID string, s store.Set, opID string) (store.Outcome, error) {
+	if s.ID == f.failID {
+		return "", errors.New("disk on fire")
+	}
+	return f.Store.UpsertSet(ctx, userID, s, opID)
+}
+
+// One operation hitting a server error must not block the ones after it:
+// otherwise the client retries the same batch forever.
+func TestServerErrorRejectsOnlyThatOp(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	sess, _ := e.svc.StartAdHoc(ctx, e.alice)
+	bad := "01900000-0000-7000-8000-0000000000e1"
+	svc := *e.svc
+	svc.Store = failingStore{Store: e.db, failID: bad}
+	now := time.Now().UTC()
+	results, err := svc.ApplyOps(ctx, e.alice, []Op{
+		setOp(bad, sess.ID, "barbell-back-squat", 100, 5, 0, now),
+		setOp("01900000-0000-7000-8000-0000000000e2", sess.ID, "barbell-back-squat", 100, 5, 0, now),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if results[0].Status != "rejected" || results[0].Reason != "server error" || results[1].Status != "applied" {
+		t.Fatalf("results = %+v", results)
+	}
+}
+
+// A history edit wins even against a set whose (clamped) client timestamp is
+// a few minutes ahead of the server: the user saw "saved", so it must be.
+func TestHistoryEditBeatsClockAhead(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	sess, _ := e.svc.StartAdHoc(ctx, e.alice)
+	id := "01900000-0000-7000-8000-0000000000e3"
+	if _, err := e.svc.ApplyOps(ctx, e.alice, []Op{setOp(id, sess.ID, "barbell-back-squat", 100, 5, 0, time.Now().Add(4*time.Minute))}); err != nil {
+		t.Fatal(err)
+	}
+	kg, reps := 105.0, 5
+	if err := e.svc.SaveSet(ctx, e.alice, SetInput{ID: id, SessionID: sess.ID, Slug: "barbell-back-squat", Kind: "working", WeightKg: &kg, Reps: &reps}); err != nil {
+		t.Fatal(err)
+	}
+	if _, sets, _ := e.svc.Session(ctx, e.alice, sess.ID); *sets[0].WeightKg != 105 {
+		t.Fatalf("history edit lost: %v", *sets[0].WeightKg)
+	}
 }
 
 func TestBootstrap(t *testing.T) {

@@ -176,8 +176,9 @@ CREATE INDEX sets_user_slug_done ON sets (user_id, slug, done_at);
 
 -- Sync operations already applied, so replays are answered, not re-applied.
 CREATE TABLE applied_ops (
-  op_id      TEXT NOT NULL PRIMARY KEY,
   user_id    TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+  op_id      TEXT NOT NULL,
   result     TEXT NOT NULL,
-  applied_at TEXT NOT NULL
+  applied_at TEXT NOT NULL,
+  PRIMARY KEY (user_id, op_id) -- op ids come from clients, so they are scoped per user
 );

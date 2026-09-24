@@ -2,6 +2,7 @@ package training
 
 import (
 	"context"
+	"time"
 
 	"github.com/LongerHV/onerep/internal/store"
 )
@@ -38,6 +39,17 @@ func (s *Service) Session(ctx context.Context, user store.User, id string) (stor
 // stamped with the server's clock, so it wins over older companion edits.
 func (s *Service) SaveSet(ctx context.Context, user store.User, in SetInput) error {
 	in.UpdatedAt = s.now()
+	// A companion edit may carry a (clamped) timestamp a few minutes ahead of
+	// the server; the history edit is newer from the user's point of view.
+	sets, err := s.Store.SessionSets(ctx, user.ID, in.SessionID)
+	if err != nil {
+		return err
+	}
+	for _, existing := range sets {
+		if existing.ID == in.ID && !in.UpdatedAt.After(existing.UpdatedAt) {
+			in.UpdatedAt = existing.UpdatedAt.Add(time.Millisecond)
+		}
+	}
 	set, err := s.toStore(ctx, user, in)
 	if err != nil {
 		return err
