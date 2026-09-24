@@ -128,3 +128,56 @@ CREATE TABLE active_plan (
   cursor_day  INTEGER NOT NULL,
   updated_at  TEXT    NOT NULL
 );
+
+-- A workout. Planned sessions snapshot the resolved day they started from
+-- (spec §9); ad-hoc sessions have no plan and an empty snapshot.
+CREATE TABLE sessions (
+  id              TEXT    NOT NULL PRIMARY KEY,
+  user_id         TEXT    NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+  plan_id         TEXT    REFERENCES plans (id) ON DELETE SET NULL,
+  plan_version_id TEXT    REFERENCES plan_versions (id) ON DELETE SET NULL,
+  week            INTEGER NOT NULL DEFAULT 0, -- 0 for ad-hoc sessions
+  day             INTEGER NOT NULL DEFAULT 0,
+  name            TEXT    NOT NULL,
+  snapshot        TEXT    NOT NULL, -- plan.ExpandedDay as JSON
+  started_at      TEXT    NOT NULL,
+  finished_at     TEXT,
+  notes           TEXT    NOT NULL DEFAULT '',
+  updated_at      TEXT    NOT NULL
+);
+
+CREATE INDEX sessions_user_started ON sessions (user_id, started_at);
+
+-- Logged sets. IDs come from the client so offline replays are idempotent.
+-- Deletes are soft so a late replay cannot bring a set back.
+CREATE TABLE sets (
+  id           TEXT    NOT NULL PRIMARY KEY,
+  session_id   TEXT    NOT NULL REFERENCES sessions (id) ON DELETE CASCADE,
+  user_id      TEXT    NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+  slug         TEXT    NOT NULL, -- the exercise actually performed
+  group_pos    INTEGER NOT NULL,
+  exercise_pos INTEGER NOT NULL,
+  set_pos      INTEGER NOT NULL,
+  kind         TEXT    NOT NULL CHECK (kind IN ('warmup', 'working', 'drop', 'amrap')),
+  prescribed   TEXT, -- plan.PrescribedSet as JSON; NULL for unplanned sets
+  weight_kg    REAL,
+  reps         INTEGER,
+  rpe          REAL,
+  duration_s   INTEGER,
+  distance_m   REAL,
+  e1rm_kg      REAL, -- derived, recomputed on every write
+  done_at      TEXT,
+  updated_at   TEXT    NOT NULL,
+  deleted_at   TEXT
+);
+
+CREATE INDEX sets_session ON sets (session_id);
+CREATE INDEX sets_user_slug_done ON sets (user_id, slug, done_at);
+
+-- Sync operations already applied, so replays are answered, not re-applied.
+CREATE TABLE applied_ops (
+  op_id      TEXT NOT NULL PRIMARY KEY,
+  user_id    TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+  result     TEXT NOT NULL,
+  applied_at TEXT NOT NULL
+);
