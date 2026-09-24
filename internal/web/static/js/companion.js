@@ -148,6 +148,7 @@ const weightText = (kg, unit) => (kg === null || kg === undefined ? "" : `${fmt(
 const repsText = (r) => (!r ? "" : r.amrap ? "AMRAP" : r.min === r.max ? String(r.min) : `${r.min}-${r.max}`);
 const btn = "rounded bg-zinc-900 px-3 py-2 text-sm font-medium text-white dark:bg-zinc-100 dark:text-zinc-900";
 const btn2 = "rounded border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-700";
+const prBadge = "rounded bg-amber-200 px-1.5 py-0.5 text-xs font-medium text-amber-900 dark:bg-amber-900 dark:text-amber-100";
 const input = "w-full rounded border border-zinc-300 bg-white px-2 py-2 text-lg dark:border-zinc-700 dark:bg-zinc-900";
 
 function setText(set, unit) {
@@ -275,6 +276,10 @@ class Companion {
         h("h1", { class: "text-2xl font-semibold" }, b.session.name),
         h("span", { "data-sync": true, class: "text-sm" })),
       h("p", { "data-rest": true, class: "mt-2 text-3xl font-semibold tabular-nums", hidden: true }),
+      this.prBanner && h("p", {
+        "data-pr-banner": true, role: "status",
+        class: "mt-3 rounded bg-amber-100 p-2 text-sm font-medium text-amber-900 dark:bg-amber-950 dark:text-amber-100",
+      }, this.prBanner),
       s.finished ? this.finishedView() : step ? this.stepView(step) : this.doneView(),
       h("div", { "data-failed": true }, this.failedView()),
       this.overview(),
@@ -325,7 +330,10 @@ class Companion {
       msg.textContent = problem;
       return;
     }
-    this.apply(core.logSet(this.boot, this.state, step, values));
+    const res = core.logSet(this.boot, this.state, step, values);
+    const set = res.op.payload;
+    this.prBanner = core.isPR(this.boot, res.state, set) ? `New PR: ${core.exerciseInfo(this.boot, set.slug).name} ${setText(set, this.unit)}` : null;
+    this.apply(res);
   }
 
   stepView(step) {
@@ -456,7 +464,9 @@ class Companion {
         if (set && this.editing === set.id) return this.editRow(step, set, t);
         return h("li", { class: "flex items-center justify-between gap-2 py-1", "data-status": st },
           h("span", {}, `${step.s + 1}. ${set ? core.exerciseInfo(b, set.slug).name : t.name}`),
-          st === "done" ? h("button", { class: "text-sm underline", onclick: () => { this.editing = set.id; this.render(); } }, setText(set, this.unit))
+          st === "done" ? h("span", { class: "flex items-center gap-2" },
+            core.isPR(b, s, set) && h("span", { "data-pr-badge": true, class: prBadge }, "PR"),
+            h("button", { class: "text-sm underline", onclick: () => { this.editing = set.id; this.render(); } }, setText(set, this.unit)))
             : st === "skipped" ? h("button", { class: "text-sm text-zinc-500 underline", onclick: () => this.update(core.unskip(s, step)) }, "skipped")
             : h("span", { class: "text-sm text-zinc-500" }, this.targetText(t)));
       });

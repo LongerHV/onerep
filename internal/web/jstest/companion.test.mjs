@@ -3,7 +3,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   addExercise, addSet, currentStep, deleteSet, finish, groups, logSet, logged, mergeServerSets,
-  failedFor, newState, parseReps, restAfter, sessionE1RM, settle, skip, status, steps, swap, target, uuidv7, validateValues,
+  failedFor, isPR, newState, parseReps, restAfter, sessionE1RM, settle, skip, status, steps, swap, target, uuidv7, validateValues,
 } from "../static/js/companion-core.js";
 
 const bar = { kind: "barbell", unit: "kg", config: { bar: 20, plates: [25, 20, 15, 10, 5, 2.5, 1.25] } };
@@ -222,4 +222,29 @@ test("rejected changes are listed per session", () => {
     { op_id: "2", op: "edit_notes", payload: { session_id: "other" }, reason: "bad notes" },
   ];
   assert.deepEqual(failedFor(failed, "sess").map((f) => f.op_id), ["1"]);
+});
+test("isPR beats the heaviest earlier set at the same reps", () => {
+  const boot = { exercises: { squat: { name: "Squat", measurement: "weight_reps", prs: { 5: 100 } } }, catalog: [] };
+  const mk = (id, kg, reps, done, kind = "working") => ({ id, slug: "squat", kind, weight_kg: kg, reps, done_at: done });
+  const a = mk("a", 100, 5, "2026-09-24T10:00:00.000Z");
+  const b = mk("b", 102.5, 5, "2026-09-24T10:05:00.000Z");
+  const c = mk("c", 102.5, 5, "2026-09-24T10:10:00.000Z");
+  const state = { sets: { a, b, c } };
+  assert.equal(isPR(boot, state, a), false, "a tie is not a PR");
+  assert.equal(isPR(boot, state, b), true);
+  assert.equal(isPR(boot, state, c), false, "b already reached 102.5");
+  assert.equal(isPR(boot, state, mk("w", 200, 5, "2026-09-24T10:20:00.000Z", "warmup")), false, "warmups are never PRs");
+  assert.equal(isPR(boot, state, mk("n", 50, 3, "2026-09-24T10:20:00.000Z")), false, "no earlier 3-rep set to beat");
+  state.sets.b = { ...b, deleted: true };
+  assert.equal(isPR(boot, state, c), true, "deleted sets don't count");
+});
+
+test("PR compares done_at as times", () => {
+  const boot = { exercises: { squat: { name: "Squat", measurement: "weight_reps", prs: {} } }, catalog: [] };
+  // Go's JSON drops zero milliseconds: "…:00Z" is earlier than "…:00.500Z" but sorts after it as text.
+  const synced = { id: "s", slug: "squat", kind: "working", weight_kg: 100, reps: 5, done_at: "2026-09-24T10:00:00Z" };
+  const local = { id: "l", slug: "squat", kind: "working", weight_kg: 105, reps: 5, done_at: "2026-09-24T10:00:00.500Z" };
+  const state = { sets: { s: synced, l: local } };
+  assert.equal(isPR(boot, state, local), true);
+  assert.equal(isPR(boot, state, synced), false);
 });

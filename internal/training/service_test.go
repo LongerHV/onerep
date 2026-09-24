@@ -363,3 +363,42 @@ func TestHistoryEditing(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// The bootstrap's PR table holds other sessions' bests (warmups excluded);
+// the session's own sets are judged by the companion.
+func TestBootstrapPRs(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	e.follow(t)
+	prev, _ := e.svc.StartPlanned(ctx, e.alice)
+	then := time.Now().UTC().Add(-time.Hour)
+	warm := setOp("01900000-0000-7000-8000-00000000001b", prev.ID, "barbell-back-squat", 130, 5, 0, then)
+	var in SetInput
+	_ = json.Unmarshal(warm.Payload, &in)
+	in.Kind = "warmup"
+	warm.Payload = payload(in)
+	if _, err := e.svc.ApplyOps(ctx, e.alice, []Op{
+		setOp("01900000-0000-7000-8000-00000000001a", prev.ID, "barbell-back-squat", 110, 5, 9, then), warm}); err != nil {
+		t.Fatal(err)
+	}
+	_ = e.svc.Finish(ctx, e.alice, prev.ID)
+	_ = e.plans.Choose(ctx, e.alice, 1, 0)
+	sess, err := e.svc.StartPlanned(ctx, e.alice)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := e.svc.Bootstrap(ctx, e.alice, sess.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := b.Exercises["barbell-back-squat"].PRs; got[5] != 110 || len(got) != 1 {
+		t.Fatalf("bootstrap PRs = %v, want {5: 110} (warmups don't count)", got)
+	}
+	if _, err := e.svc.ApplyOps(ctx, e.alice, []Op{setOp("01900000-0000-7000-8000-00000000001c", sess.ID, "barbell-back-squat", 120, 5, 9, time.Now().UTC())}); err != nil {
+		t.Fatal(err)
+	}
+	b, _ = e.svc.Bootstrap(ctx, e.alice, sess.ID)
+	if got := b.Exercises["barbell-back-squat"].PRs; got[5] != 110 {
+		t.Fatalf("the session's own sets leaked into its PR table: %v", got)
+	}
+}

@@ -43,6 +43,7 @@ type BootExercise struct {
 	Equipment     *calc.Equipment `json:"equipment,omitempty"`
 	Alternatives  []string        `json:"alternatives"`
 	Last          []SetInput      `json:"last"` // sets from the previous session with this exercise
+	PRs           map[int]float64 `json:"prs"`  // best kg per rep count in other sessions, for the advisory PR badge
 }
 
 // CatalogEntry is a catalog exercise the user can add or swap to.
@@ -144,6 +145,14 @@ func (s *Service) bootExercise(ctx context.Context, user store.User, sessionID, 
 	}
 	if be.E1RMKg, err = s.Store.BestE1RM(ctx, user.ID, slug, s.now().AddDate(0, 0, -user.E1RMWindowDays)); err != nil {
 		return BootExercise{}, nil, err
+	}
+	maxes, err := s.Store.RepMaxes(ctx, user.ID, slug, sessionID)
+	if err != nil {
+		return BootExercise{}, nil, err
+	}
+	be.PRs = map[int]float64{}
+	for _, m := range maxes {
+		be.PRs[m.Reps] = m.WeightKg
 	}
 	alts, err := s.Exercises.Alternatives(ctx, user.ID, slug)
 	if err != nil {

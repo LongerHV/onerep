@@ -28,6 +28,7 @@ type Store interface {
 	SessionSets(ctx context.Context, userID, sessionID string) ([]store.Set, error)
 	LastSets(ctx context.Context, userID, slug, excludeSessionID string) ([]store.Set, error)
 	BestE1RM(ctx context.Context, userID, slug string, since time.Time) (*float64, error)
+	RepMaxes(ctx context.Context, userID, slug, excludeSessionID string) ([]store.RepMax, error)
 	UpsertSet(ctx context.Context, userID string, s store.Set, opID string) (store.Outcome, error)
 	DeleteSet(ctx context.Context, userID, sessionID, setID string, at time.Time, opID string) (store.Outcome, error)
 	SetSessionNotes(ctx context.Context, userID, sessionID, notes string, at time.Time, opID string) (store.Outcome, error)

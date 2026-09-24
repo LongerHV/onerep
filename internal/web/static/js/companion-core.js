@@ -360,3 +360,22 @@ export function validateValues(measurement, v) {
 export function failedFor(failed, sessionId) {
   return failed.filter((f) => f.payload && f.payload.session_id === sessionId);
 }
+
+const prKinds = ["working", "amrap"];
+const counts = (s) => s && !s.deleted && prKinds.includes(s.kind) && typeof s.weight_kg === "number" && s.reps >= 1;
+const time = (s) => Date.parse(s.done_at);
+
+// isPR reports whether set beats the heaviest earlier working or AMRAP set of
+// its exercise at the same reps (spec §13): earlier sessions come from the
+// bootstrap's table, this session's from state. Advisory; history is judged
+// by the server. The first set at a rep count has nothing to beat.
+export function isPR(boot, state, set) {
+  if (!counts(set)) return false;
+  let best = exerciseInfo(boot, set.slug).prs?.[set.reps] ?? null;
+  for (const o of Object.values(state.sets)) {
+    if (o.id === set.id || o.slug !== set.slug || o.reps !== set.reps || !counts(o)) continue;
+    const earlier = time(o) < time(set) || (time(o) === time(set) && o.id < set.id);
+    if (earlier) best = best === null ? o.weight_kg : Math.max(best, o.weight_kg);
+  }
+  return best !== null && set.weight_kg > best;
+}
