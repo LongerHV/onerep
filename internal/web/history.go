@@ -1,11 +1,11 @@
 package web
 
 import (
+	"encoding/json"
 	"errors"
 	"net/http"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/go-chi/chi/v5"
 
@@ -43,6 +43,14 @@ func (s *Server) historyData(r *http.Request, id string) (views.HistoryDetail, e
 		return views.HistoryDetail{}, err
 	}
 	d := views.HistoryDetail{Session: sess, Exercises: map[string]store.Exercise{}}
+	// New sets go after the planned groups, so the companion never takes
+	// them for a planned set it has not reached yet.
+	var snapshot struct {
+		Groups []json.RawMessage `json:"groups"`
+	}
+	if err := json.Unmarshal(sess.Snapshot, &snapshot); err == nil {
+		d.NextGroupPos = len(snapshot.Groups)
+	}
 	catalog, err := s.Exercises.Catalog(ctx, u.ID, "")
 	if err != nil {
 		return d, err
@@ -136,10 +144,15 @@ func (s *Server) historySaveSet(w http.ResponseWriter, r *http.Request) {
 	in, err := parseSetForm(r, u.Unit)
 	if err == nil {
 		in.SessionID = id
-		if in.ID == "" { // a new set, done now
+		if in.ID == "" { // a forgotten set: it belongs to when the workout was
 			in.ID = newSetID()
-			now := time.Now().UTC()
-			in.DoneAt = &now
+			d, err := s.historyData(r, id)
+			if err != nil {
+				s.fail(w, r, err)
+				return
+			}
+			in.DoneAt = &d.Session.StartedAt
+			in.GroupPos, in.ExercisePos, in.SetPos = d.NextGroupPos, 0, 0
 		} else if sets := s.existingSet(r, id, in.ID); sets != nil {
 			in.DoneAt, in.Prescribed = sets.DoneAt, sets.Prescribed
 		}

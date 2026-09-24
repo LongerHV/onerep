@@ -160,10 +160,12 @@ templ ExerciseDetailPage(p Page, d ExerciseDetail) {
 				for _, h := range d.History {
 					<tr class="border-t border-zinc-200 dark:border-zinc-800">
 						<td class="py-1">{ h.CreatedAt.Format("2006-01-02 15:04") }</td>
-						<td>@optionalWeight(h.OldKg, p.Identity.User.Unit)
-</td>
-						<td>@optionalWeight(h.NewKg, p.Identity.User.Unit)
-</td>
+						<td>
+							@optionalWeight(h.OldKg, p.Identity.User.Unit)
+						</td>
+						<td>
+							@optionalWeight(h.NewKg, p.Identity.User.Unit)
+						</td>
 						<td>{ h.Source }</td>
 					</tr>
 				}

@@ -95,7 +95,6 @@ templ HistoryDetailPage(p Page, d HistoryDetail) {
 	<h2 class={ h2 }>Add a set</h2>
 	<form method="post" action={ templ.URL("/history/" + d.Session.ID + "/sets") } class="mt-2 flex flex-wrap items-end gap-2">
 		@CSRF(p)
-		<input type="hidden" name="group_pos" value={ strconv.Itoa(d.NextGroupPos) }/>
 		<label class={ label }>
 			Exercise
 			<select name="slug" class={ input }>

@@ -22,7 +22,6 @@ templ Home(p Page, h HomePage) {
 				<li><a href="/exercises" class="underline">Browse exercises</a> and set training maxes</li>
 				<li><a href="/equipment" class="underline">Set up your equipment</a> so weights round to what you can load</li>
 			</ul>
-			@startEmpty(p, h)
 		case h.Next.Complete:
 			<div class={ card + " mt-4" }>
 				<p>
@@ -67,6 +66,7 @@ templ Home(p Page, h HomePage) {
 				</div>
 			</div>
 	}
+	@startEmpty(p, h)
 }
 
 templ SignedOut(p Page) {

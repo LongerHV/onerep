@@ -234,3 +234,35 @@ func TestSyncWithoutSessionIs401(t *testing.T) {
 		t.Fatalf("got %d", resp.StatusCode)
 	}
 }
+
+// Sets added in history belong to that workout: dated at its start (not
+// today, which would skew e1RM windows and stats) and placed after the
+// planned groups so the companion never mistakes them for a planned set.
+func TestHistoryAddedSetPlacement(t *testing.T) {
+	srv, c, db := newAppDB(t, "alice")
+	csrf := session(t, srv, c)
+	id := startPlanned(t, srv.URL, c, csrf) // the Upper day has 3 groups
+	post(t, c, srv.URL+"/history/"+id+"/sets", csrf, url.Values{"slug": {"dumbbell-curl"}, "weight": {"12"}, "reps": {"10"}})
+
+	ctx := context.Background()
+	u, _ := db.UpsertOIDCUser(ctx, "dev", "alice", "alice@localhost", "alice")
+	sess, _ := db.SessionByID(ctx, u.ID, id)
+	sets, _ := db.SessionSets(ctx, u.ID, id)
+	if len(sets) != 1 || sets[0].GroupPos < 3 {
+		t.Fatalf("added set group_pos = %d, want past the 3 planned groups", sets[0].GroupPos)
+	}
+	if sets[0].DoneAt == nil || !sets[0].DoneAt.Equal(sess.StartedAt) {
+		t.Fatalf("done_at = %v, want the session start %v", sets[0].DoneAt, sess.StartedAt)
+	}
+}
+
+// Following a plan must not hide the option to train something else.
+func TestEmptyWorkoutWhileFollowingAPlan(t *testing.T) {
+	srv, c := newApp(t, "alice")
+	csrf := session(t, srv, c)
+	resp, _ := post(t, c, srv.URL+"/plans", csrf, url.Values{"doc": {starter}, "action": {"activate"}})
+	post(t, c, srv.URL+"/plans/"+planID(t, resp)+"/follow", csrf, nil)
+	if home := read(t, mustGet(t, c, srv.URL+"/")); !strings.Contains(home, "Next: Upper") || !strings.Contains(home, "Start an empty workout") {
+		t.Fatal("no empty workout option next to the planned day")
+	}
+}
