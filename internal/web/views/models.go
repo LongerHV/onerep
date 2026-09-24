@@ -103,3 +103,11 @@ type HistoryGroup struct {
 	GroupPos int
 	Sets     []store.Set
 }
+
+// TokensData is the API tokens page. Secret is set only right after creation.
+type TokensData struct {
+	Tokens []store.APIToken
+	Secret string
+	MCPURL string
+	Error  string
+}

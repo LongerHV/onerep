@@ -36,6 +36,7 @@ func newAppDB(t *testing.T, devUser string) (*httptest.Server, *http.Client, *st
 		t.Fatal(err)
 	}
 	s := &Server{DB: db, Sessions: &auth.Sessions{Store: db}, DevUser: devUser,
+		BaseURL: "http://example.test", Tokens: &auth.Tokens{Store: db},
 		Exercises: &exercise.Service{Store: db}, Account: &account.Service{Store: db}}
 	s.Plans = &plan.Service{Store: db, Exercises: s.Exercises, History: db}
 	s.Training = &training.Service{Store: db, Plans: s.Plans, Exercises: s.Exercises}

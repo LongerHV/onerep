@@ -109,6 +109,8 @@ func serve(ctx context.Context, cfg config.Config) error {
 		Sessions:  sessions,
 		Exercises: &exercise.Service{Store: db},
 		Account:   &account.Service{Store: db},
+		BaseURL:   cfg.BaseURL,
+		Tokens:    &auth.Tokens{Store: db},
 	}
 	srv.Plans = &plan.Service{Store: db, Exercises: srv.Exercises, History: db}
 	srv.Training = &training.Service{Store: db, Plans: srv.Plans, Exercises: srv.Exercises}

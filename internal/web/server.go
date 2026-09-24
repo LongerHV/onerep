@@ -27,6 +27,8 @@ type Server struct {
 	Sessions *auth.Sessions
 	OIDC     *auth.OIDC // nil when only the dev bypass is configured
 	DevUser  string     // non-empty enables the dev login bypass
+	BaseURL  string     // public URL, for links shown to users
+	Tokens   *auth.Tokens
 
 	Exercises *exercise.Service
 	Account   *account.Service
@@ -76,6 +78,7 @@ func (s *Server) Routes() http.Handler {
 		s.equipmentRoutes(r)
 		r.Get("/settings", s.settings)
 		r.Post("/settings", s.saveSettings)
+		s.tokenRoutes(r)
 	})
 	return r
 }
