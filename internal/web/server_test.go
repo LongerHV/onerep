@@ -14,6 +14,7 @@ import (
 	"github.com/LongerHV/onerep/internal/account"
 	"github.com/LongerHV/onerep/internal/auth"
 	"github.com/LongerHV/onerep/internal/exercise"
+	"github.com/LongerHV/onerep/internal/plan"
 	"github.com/LongerHV/onerep/internal/store"
 	"github.com/LongerHV/onerep/internal/store/storetest"
 )
@@ -34,6 +35,7 @@ func newAppDB(t *testing.T, devUser string) (*httptest.Server, *http.Client, *st
 	}
 	s := &Server{DB: db, Sessions: &auth.Sessions{Store: db}, DevUser: devUser,
 		Exercises: &exercise.Service{Store: db}, Account: &account.Service{Store: db}}
+	s.Plans = &plan.Service{Store: db, Exercises: s.Exercises}
 	srv := httptest.NewServer(s.Routes())
 	t.Cleanup(srv.Close)
 	jar, _ := cookiejar.New(nil)

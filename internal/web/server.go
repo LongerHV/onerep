@@ -14,6 +14,7 @@ import (
 	"github.com/LongerHV/onerep/internal/account"
 	"github.com/LongerHV/onerep/internal/auth"
 	"github.com/LongerHV/onerep/internal/exercise"
+	"github.com/LongerHV/onerep/internal/plan"
 	"github.com/LongerHV/onerep/internal/store"
 	"github.com/LongerHV/onerep/internal/web/views"
 )
@@ -27,6 +28,7 @@ type Server struct {
 
 	Exercises *exercise.Service
 	Account   *account.Service
+	Plans     *plan.Service
 }
 
 // Routes returns the application's HTTP handler.
@@ -38,6 +40,7 @@ func (s *Server) Routes() http.Handler {
 	})
 
 	r.Get("/healthz", s.healthz)
+	r.Get("/schema/plan.json", planSchema)
 	r.Handle("/static/*", staticHandler())
 	r.Get("/auth/signed-out", func(w http.ResponseWriter, r *http.Request) {
 		render(w, r, http.StatusOK, views.SignedOut(page(r, "Signed out")))
@@ -55,10 +58,11 @@ func (s *Server) Routes() http.Handler {
 		if s.DevUser != "" {
 			r.Use(auth.DevLogin(s.Sessions, s.DevUser))
 		}
-		r.Use(auth.RequireUser, auth.CSRF, s.starterEquipment)
+		r.Use(auth.RequireUser, s.limitBody, auth.CSRF, s.starterEquipment)
 		r.Get("/", s.home)
 		r.Post("/auth/logout", s.logout)
 		s.exerciseRoutes(r)
+		s.planRoutes(r)
 		s.equipmentRoutes(r)
 		r.Get("/settings", s.settings)
 		r.Post("/settings", s.saveSettings)
@@ -126,10 +130,6 @@ func (s *Server) healthz(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write([]byte("ok"))
 }
 
-func (s *Server) home(w http.ResponseWriter, r *http.Request) {
-	render(w, r, http.StatusOK, views.Home(page(r, "Home")))
-}
-
 func (s *Server) logout(w http.ResponseWriter, r *http.Request) {
 	if err := s.Sessions.End(w, r); err != nil {
 		slog.ErrorContext(r.Context(), "logout", "err", err)
@@ -160,6 +160,25 @@ func (s *Server) starterEquipment(next http.Handler) http.Handler {
 		if err := s.Exercises.EnsureStarterEquipment(r.Context(), user(r)); err != nil {
 			s.fail(w, r, err)
 			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// maxBodyBytes bounds request bodies; the largest legitimate one is a plan document.
+const maxBodyBytes = 1 << 20
+
+// limitBody refuses oversized requests before anything reads them. Form posts
+// are parsed here so the limit applies before the CSRF check reads the token.
+func (s *Server) limitBody(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		r.Body = http.MaxBytesReader(w, r.Body, maxBodyBytes)
+		if r.Method == http.MethodPost {
+			var tooLarge *http.MaxBytesError
+			if err := r.ParseForm(); errors.As(err, &tooLarge) {
+				s.renderError(w, r, http.StatusRequestEntityTooLarge, "The request is too large (at most 1 MB).")
+				return
+			}
 		}
 		next.ServeHTTP(w, r)
 	})

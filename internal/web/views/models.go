@@ -2,6 +2,7 @@ package views
 
 import (
 	"github.com/LongerHV/onerep/internal/exercise"
+	"github.com/LongerHV/onerep/internal/plan"
 	"github.com/LongerHV/onerep/internal/store"
 )
 
@@ -49,4 +50,35 @@ type CalcResult struct {
 	Kg        float64
 	PerSide   []float64
 	Error     string
+}
+
+// PlanEditor is the plan editor page.
+type PlanEditor struct {
+	PlanID string // "" for a new plan
+	Title  string
+	Doc    string // the document text shown in the editor
+	Schema string // the plan JSON Schema, for the in-browser validator
+	Errors plan.Problems
+}
+
+// PlanPage is a plan with its versions.
+type PlanPage struct {
+	Plan      store.Plan
+	Versions  []store.PlanVersion
+	Following bool
+	Notice    string
+}
+
+// PlanVersionPage shows one version expanded week by week.
+type PlanVersionPage struct {
+	Plan    store.Plan
+	Version store.PlanVersion
+	Weeks   [][]plan.ExpandedDay
+	JSON    string
+}
+
+// HomePage is the start page.
+type HomePage struct {
+	Next   *plan.Next
+	Notice string
 }

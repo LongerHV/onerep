@@ -1,0 +1,319 @@
+package views
+
+import (
+	"encoding/json"
+	"strconv"
+
+	"github.com/LongerHV/onerep/internal/plan"
+	"github.com/LongerHV/onerep/internal/store"
+)
+
+templ PlansPage(p Page, plans []plan.PlanSummary) {
+	@Layout(p) {
+		<div class="flex items-center justify-between">
+			<h1 class={ h1 }>Plans</h1>
+			<a href="/plans/new" class={ btn }>New plan</a>
+		</div>
+		if len(plans) == 0 {
+			<p class="mt-4 text-zinc-500">No plans yet. Start from the template, or ask your AI assistant to draft one.</p>
+		}
+		<ul class="mt-4 space-y-2">
+			for _, s := range plans {
+				<li class={ card + " flex items-center justify-between gap-4" }>
+					<div>
+						<a href={ templ.URL("/plans/" + s.ID) } class="font-medium underline">{ s.Name }</a>
+						if s.Following {
+							<span class={ badge }>following</span>
+						}
+						if s.Archived {
+							<span class={ badge }>archived</span>
+						}
+						<p class="text-sm text-zinc-500">
+							if s.Active != nil {
+								Version { strconv.Itoa(s.Active.Version) } active
+							} else {
+								No active version
+							}
+							if s.Drafts > 0 {
+								· { strconv.Itoa(s.Drafts) } draft(s) to review
+							}
+						</p>
+					</div>
+				</li>
+			}
+		</ul>
+	}
+}
+
+templ PlanDetailPage(p Page, d PlanPage) {
+	@Layout(p) {
+		<div class="flex flex-wrap items-start justify-between gap-2">
+			<div>
+				<h1 class={ h1 }>{ d.Plan.Name }</h1>
+				if d.Following {
+					<p class="text-sm text-zinc-500">You are following this plan.</p>
+				}
+			</div>
+			<div class="flex flex-wrap gap-2">
+				<a href={ templ.URL("/plans/" + d.Plan.ID + "/edit") } class={ btnSecondary }>Edit</a>
+				if !d.Following && !d.Plan.Archived {
+					<form method="post" action={ templ.URL("/plans/" + d.Plan.ID + "/follow") }>
+						@CSRF(p)
+						<button type="submit" class={ btn }>Follow this plan</button>
+					</form>
+				}
+				<form method="post" action={ templ.URL("/plans/" + d.Plan.ID + "/archive") }>
+					@CSRF(p)
+					if d.Plan.Archived {
+						<input type="hidden" name="archived" value="0"/>
+						<button type="submit" class={ btnSecondary }>Restore</button>
+					} else {
+						<input type="hidden" name="archived" value="1"/>
+						<button type="submit" class={ btnSecondary }>Archive</button>
+					}
+				</form>
+			</div>
+		</div>
+		if d.Notice != "" {
+			<p class="mt-4 rounded bg-amber-100 p-2 text-sm dark:bg-amber-950">{ d.Notice }</p>
+		}
+		<h2 class={ h2 }>Versions</h2>
+		<table class="mt-2 w-full text-sm">
+			<thead class="text-left text-zinc-500">
+				<tr><th class="py-1">Version</th><th>Status</th><th>By</th><th>Saved</th><th></th></tr>
+			</thead>
+			<tbody>
+				for _, v := range d.Versions {
+					<tr class="border-t border-zinc-200 dark:border-zinc-800">
+						<td class="py-1">
+							<a href={ templ.URL("/plans/" + d.Plan.ID + "/versions/" + v.ID) } class="underline">v{ strconv.Itoa(v.Version) }</a>
+							if v.Note != "" {
+								<span class="text-zinc-500">{ v.Note }</span>
+							}
+						</td>
+						<td>{ v.Status }</td>
+						<td>{ v.Source }</td>
+						<td>{ v.CreatedAt.Format("2006-01-02 15:04") }</td>
+						<td class="text-right">
+							if v.Status != store.PlanActive {
+								<a href={ templ.URL("/plans/" + d.Plan.ID + "/versions/" + v.ID + "/compare") } class="underline">
+									if v.Status == store.PlanDraft {
+										Review
+									} else {
+										Compare
+									}
+								</a>
+							}
+						</td>
+					</tr>
+				}
+			</tbody>
+		</table>
+	}
+}
+
+templ PlanEditorPage(p Page, e PlanEditor) {
+	@Layout(p) {
+		<link rel="stylesheet" href="/static/vendor/jsoneditor/jse-theme-dark.css"/>
+		<h1 class={ h1 }>{ e.Title }</h1>
+		<p class="mt-1 text-sm text-zinc-500">
+			The plan is a JSON document. <a href="/schema/plan.json" class="underline">Schema</a>:
+			values marked "per week" can be one value or an array with one entry per week.
+		</p>
+		<form
+			method="post"
+			if e.PlanID == "" {
+				action="/plans"
+			} else {
+				action={ templ.URL("/plans/" + e.PlanID) }
+			}
+			class="mt-4 grid gap-4 lg:grid-cols-2"
+		>
+			@CSRF(p)
+			<div>
+				<textarea
+					id="doc"
+					name="doc"
+					rows="30"
+					spellcheck="false"
+					aria-label="Plan document (JSON)"
+					class={ input + " font-mono text-xs" }
+					hx-post="/plans/preview"
+					hx-trigger="load, keyup changed delay:500ms, doc-changed delay:500ms"
+					hx-target="#plan-preview"
+				>{ e.Doc }</textarea>
+				<div id="doc-editor" class="h-[70vh]" hidden></div>
+				<div class="mt-2 flex gap-2">
+					<button type="submit" name="action" value="draft" class={ btnSecondary }>Save as draft</button>
+					<button type="submit" name="action" value="activate" class={ btn }>Save and activate</button>
+				</div>
+			</div>
+			<div id="plan-preview" aria-live="polite">
+				@PlanProblems(e.Errors)
+			</div>
+		</form>
+		@templ.JSONScript("plan-schema", json.RawMessage(e.Schema))
+		<script type="module" src="/static/js/plan-editor.js"></script>
+	}
+}
+
+templ PlanProblems(ps plan.Problems) {
+	if len(ps) > 0 {
+		<ul class="space-y-1 text-sm">
+			for _, pr := range ps {
+				<li
+					if pr.Warning {
+						class="rounded bg-amber-100 px-2 py-1 dark:bg-amber-950"
+					} else {
+						class="rounded bg-red-100 px-2 py-1 dark:bg-red-950"
+					}
+				>
+					if pr.Pointer != "" {
+						<code>{ pr.Pointer }</code>:
+					}
+					{ pr.Message }
+				</li>
+			}
+		</ul>
+	}
+}
+
+// PlanPreview is the editor's live preview: problems, then every week.
+templ PlanPreview(p Page, ps plan.Problems, weeks [][]plan.ExpandedDay) {
+	@PlanProblems(ps)
+	if !ps.HasErrors() {
+		@PlanWeeks(p, weeks)
+	}
+}
+
+templ PlanWeeks(p Page, weeks [][]plan.ExpandedDay) {
+	for wi, days := range weeks {
+		<details class="mt-2" open?={ wi == 0 }>
+			<summary class="cursor-pointer font-medium">Week { strconv.Itoa(wi + 1) }</summary>
+			for _, d := range days {
+				@PlanDay(p, d)
+			}
+		</details>
+	}
+}
+
+templ PlanDay(p Page, d plan.ExpandedDay) {
+	<div class={ card + " mt-2" }>
+		<h3 class="font-medium">{ d.Name }</h3>
+		for gi, g := range d.Groups {
+			<div class="mt-2">
+				<p class="text-xs text-zinc-500">
+					if len(g.Exercises) > 1 {
+						Superset,
+					}
+					rest { strconv.Itoa(g.RestS) }s
+				</p>
+				for _, slot := range g.Exercises {
+					<div class="mt-1">
+						<p>
+							<a href={ templ.URL("/exercises/" + slot.Slug) } class="underline">{ slot.Name }</a>
+							if slot.Notes != "" {
+								<span class="text-sm text-zinc-500">{ slot.Notes }</span>
+							}
+						</p>
+						<ul class="ml-4 text-sm">
+							for _, sg := range plan.GroupSets(slot.Sets) {
+								<li>
+									{ plan.Prescription(sg, p.Identity.User.Unit) }
+									if sg.Set.Kg != nil {
+										→ <strong>{ Weight(*sg.Set.Kg, p.Identity.User.Unit) }</strong>
+										if len(sg.Set.PerSide) > 0 {
+											<span class="text-zinc-500">(per side { plates(sg.Set.PerSide) })</span>
+										}
+									} else if sg.Set.LoadKind != "" {
+										<span class="text-zinc-500">→ pick weight</span>
+									}
+								</li>
+							}
+						</ul>
+					</div>
+				}
+			</div>
+			if gi < len(d.Groups)-1 {
+				<hr class="mt-2 border-zinc-200 dark:border-zinc-800"/>
+			}
+		}
+	</div>
+}
+
+templ PlanVersionView(p Page, d PlanVersionPage) {
+	@Layout(p) {
+		<p class="text-sm"><a href={ templ.URL("/plans/" + d.Plan.ID) } class="underline">{ d.Plan.Name }</a></p>
+		<h1 class={ h1 }>Version { strconv.Itoa(d.Version.Version) } <span class={ badge }>{ d.Version.Status }</span></h1>
+		<div class="mt-2 flex gap-2">
+			<a href={ templ.URL("/plans/" + d.Plan.ID + "/edit?from=" + d.Version.ID) } class={ btnSecondary }>Edit from this version</a>
+			if d.Version.Status != store.PlanActive {
+				<a href={ templ.URL("/plans/" + d.Plan.ID + "/versions/" + d.Version.ID + "/compare") } class={ btnSecondary }>Compare with active</a>
+			}
+		</div>
+		@PlanWeeks(p, d.Weeks)
+		<details class="mt-4">
+			<summary class="cursor-pointer text-sm text-zinc-500">JSON</summary>
+			<pre class="mt-2 overflow-x-auto text-xs">{ d.JSON }</pre>
+		</details>
+	}
+}
+
+templ PlanComparePage(p Page, pl store.Plan, c plan.Comparison) {
+	@Layout(p) {
+		<p class="text-sm"><a href={ templ.URL("/plans/" + pl.ID) } class="underline">{ pl.Name }</a></p>
+		<h1 class={ h1 }>
+			Version { strconv.Itoa(c.Target.Version) }
+			if c.Base != nil {
+				compared with active version { strconv.Itoa(c.Base.Version) }
+			}
+		</h1>
+		if c.Target.Note != "" {
+			<p class="mt-1">{ c.Target.Note }</p>
+		}
+		if c.ResetsCursor {
+			<p class="mt-4 rounded bg-amber-100 p-2 text-sm dark:bg-amber-950">
+				Your current day does not exist in this version: activating it starts the plan over at week 1, day 1.
+			</p>
+		}
+		<div class="mt-4 flex gap-2">
+			<form method="post" action={ templ.URL("/plans/" + pl.ID + "/versions/" + c.Target.ID + "/activate") }>
+				@CSRF(p)
+				<button type="submit" class={ btn }>Activate</button>
+			</form>
+			if c.Target.Status == store.PlanDraft {
+				<form method="post" action={ templ.URL("/plans/" + pl.ID + "/versions/" + c.Target.ID + "/discard") }>
+					@CSRF(p)
+					<button type="submit" class={ btnDanger }>Discard draft</button>
+				</form>
+			}
+		</div>
+		<h2 class={ h2 }>What changes, week by week</h2>
+		if len(c.Days) == 0 {
+			<p class="mt-2 text-zinc-500">No change to any prescribed set.</p>
+		}
+		for _, dc := range c.Days {
+			<h3 class="mt-4 font-medium">Week { strconv.Itoa(dc.Week) } · { dc.Name }</h3>
+			@diffLines(dc.Lines)
+		}
+		<details class="mt-6">
+			<summary class="cursor-pointer text-sm text-zinc-500">JSON diff</summary>
+			@diffLines(c.JSON)
+		</details>
+	}
+}
+
+templ diffLines(lines []plan.DiffLine) {
+	<pre class="mt-1 overflow-x-auto text-xs">
+		for _, l := range lines {
+			switch l.Op {
+				case '+':
+					<span class="block bg-green-100 dark:bg-green-950">+ { l.Text }</span>
+				case '-':
+					<span class="block bg-red-100 dark:bg-red-950">- { l.Text }</span>
+				default:
+					<span class="block">{ "  " + l.Text }</span>
+			}
+		}
+	</pre>
+}

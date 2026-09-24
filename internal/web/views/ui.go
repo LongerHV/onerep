@@ -1,10 +1,12 @@
 package views
 
 import (
+	"strconv"
 	"strings"
 
 	"github.com/LongerHV/onerep/internal/calc"
 	"github.com/LongerHV/onerep/internal/exercise"
+	"github.com/LongerHV/onerep/internal/plan"
 	"github.com/LongerHV/onerep/internal/store"
 )
 
@@ -92,4 +94,22 @@ func has(vs []string, v string) bool {
 		}
 	}
 	return false
+}
+
+// DayOption is one entry of the "go to day" select.
+type DayOption struct {
+	Week, Day    int
+	Value, Label string
+}
+
+// DayOptions lists every training day of a plan.
+func DayOptions(doc plan.Doc) []DayOption {
+	var out []DayOption
+	for w := 1; w <= doc.Weeks; w++ {
+		for d, i := range plan.DaysForWeek(doc, w) {
+			out = append(out, DayOption{Week: w, Day: d, Value: strconv.Itoa(w) + ":" + strconv.Itoa(d),
+				Label: "Week " + strconv.Itoa(w) + " · " + doc.Days[i].Name})
+		}
+	}
+	return out
 }
