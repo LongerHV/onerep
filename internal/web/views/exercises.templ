@@ -113,7 +113,7 @@ templ ExerciseDetailPage(p Page, d ExerciseDetail) {
 				<div
 					data-chart="e1rm"
 					data-src={ "/api/stats/exercises/" + d.Exercise.Slug + "/e1rm" }
-					class="mt-2 h-64 w-full"
+					class="mt-2 min-h-64 w-full"
 					aria-label="Estimated one-rep max over time"
 				></div>
 				<p class={ hint }>Best estimated 1RM of each workout. Filled points come from RPE, hollow ones from reps alone.</p>

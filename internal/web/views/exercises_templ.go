@@ -660,7 +660,7 @@ func ExerciseDetailPage(p Page, d ExerciseDetail) templ.Component {
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}
-					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 60, "\" class=\"mt-2 h-64 w-full\" aria-label=\"Estimated one-rep max over time\"></div>")
+					templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 60, "\" class=\"mt-2 min-h-64 w-full\" aria-label=\"Estimated one-rep max over time\"></div>")
 					if templ_7745c5c3_Err != nil {
 						return templ_7745c5c3_Err
 					}

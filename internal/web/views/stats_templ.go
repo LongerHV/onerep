@@ -99,7 +99,7 @@ func MusclesPage(p Page, mw stats.MuscleWeeks) templ.Component {
 				return templ_7745c5c3_Err
 			}
 		} else {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "<div data-chart=\"muscles\" data-src=\"/api/stats/muscles\" class=\"mt-4 h-72 w-full\" aria-label=\"Weekly sets per muscle\"></div><div class=\"mt-4 overflow-x-auto\"><table class=\"w-full text-sm\"><thead class=\"text-left text-zinc-500\"><tr><th class=\"py-1 pr-2\">Muscle</th>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "<div data-chart=\"muscles\" data-src=\"/api/stats/muscles\" class=\"mt-4 min-h-72 w-full\" aria-label=\"Weekly sets per muscle\"></div><div class=\"mt-4 overflow-x-auto\"><table class=\"w-full text-sm\"><thead class=\"text-left text-zinc-500\"><tr><th class=\"py-1 pr-2\">Muscle</th>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}

@@ -9,10 +9,13 @@ const SHELL_FILES = [
   "/static/app.css",
   "/static/vendor/htmx.min.js",
   "/static/vendor/jsoneditor/jse-theme-dark.css",
+  "/static/vendor/uplot/uPlot.min.css",
   "/static/js/calc.js",
+  "/static/js/chart-data.js",
   "/static/js/companion-core.js",
   "/static/js/companion.js",
   "/static/js/plan-editor.js",
+  "/static/js/stats.js",
 ];
 
 self.addEventListener("install", (event) => {
