@@ -2,6 +2,7 @@ package plan
 
 import (
 	"os"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -141,7 +142,8 @@ func TestSemanticChecks(t *testing.T) {
 // whole plan on every keystroke, so the total is bounded too.
 func TestHugePlanIsRejectedQuickly(t *testing.T) {
 	line := `{"count": 20, "reps": 5}`
-	slot := `{"slug": "pull-up", "sets": [` + strings.TrimSuffix(strings.Repeat(line+",", 20), ",") + `]}`
+	// One line per exercise keeps it under MaxValues; the sets still multiply out.
+	slot := `{"slug": "pull-up", "sets": [` + line + `]}`
 	group := `{"exercises": [` + strings.TrimSuffix(strings.Repeat(slot+",", 6), ",") + `]}`
 	day := `{"name": "D", "groups": [` + strings.TrimSuffix(strings.Repeat(group+",", 30), ",") + `]}`
 	doc := `{"name": "huge", "weeks": 52, "days": [` + strings.TrimSuffix(strings.Repeat(day+",", 14), ",") + `]}`
@@ -152,5 +154,53 @@ func TestHugePlanIsRejectedQuickly(t *testing.T) {
 	}
 	if len(problemsAt(ps, "")) == 0 || !strings.Contains(problemsAt(ps, "")[0], "sets in total") {
 		t.Fatalf("problems = %v", ps)
+	}
+}
+
+// Under the size limit, a document can still hold enough items to make
+// schema validation and catalog lookups slow on every preview keystroke.
+func TestManyItemsAreRejectedQuickly(t *testing.T) {
+	var many []string
+	for i := range 60000 {
+		many = append(many, `"x`+strconv.Itoa(i)+`"`)
+	}
+	alts := strings.Join(many, ",")
+	doc := `{"name": "x", "weeks": 1, "days": [{"name": "A", "groups": [{"exercises": [{"slug": "pull-up", "alternatives": [` + alts + `], "sets": [{"count": 1, "reps": 1}]}]}]}]}`
+	start := time.Now()
+	_, ps := Validate([]byte(doc), testCatalog)
+	if d := time.Since(start); d > 200*time.Millisecond {
+		t.Fatalf("validation took %v", d)
+	}
+	if len(ps) != 1 || !strings.Contains(ps[0].Message, "too complex") {
+		t.Fatalf("problems = %.200v", ps)
+	}
+}
+
+func TestProblemListIsCapped(t *testing.T) {
+	var slots []string
+	for i := range 200 {
+		slots = append(slots, `{"slug": "unknown-`+strconv.Itoa(i)+`", "sets": [{"count": 1, "reps": 1}]}`)
+	}
+	var groups []string
+	for i := 0; i < len(slots); i += 5 {
+		groups = append(groups, `{"exercises": [`+strings.Join(slots[i:i+5], ",")+`]}`)
+	}
+	doc := `{"name": "x", "weeks": 1, "days": [{"name": "A", "groups": [` + strings.Join(groups[:30], ",") + `]}, {"name": "B", "groups": [` + strings.Join(groups[30:], ",") + `]}]}`
+	_, ps := Validate([]byte(doc), testCatalog)
+	if len(ps) != MaxProblems+1 || !strings.Contains(ps[MaxProblems].Message, "first 50") {
+		t.Fatalf("got %d problems, last %+v", len(ps), ps[len(ps)-1])
+	}
+}
+
+func TestSchemaLimitsArrayLengths(t *testing.T) {
+	var eleven []string
+	for i := range 11 {
+		eleven = append(eleven, `"alt-`+strconv.Itoa(i)+`"`)
+	}
+	alts := strings.Join(eleven, ",")
+	doc := `{"name": "x", "weeks": 1, "days": [{"name": "A", "groups": [{"exercises": [{"slug": "chin-up", "alternatives": [` + alts + `], "sets": [{"count": 1, "reps": 1}]}]}]}]}`
+	_, ps := Validate([]byte(doc), testCatalog)
+	if len(problemsAt(ps, "/days/0/groups/0/exercises/0/alternatives")) == 0 {
+		t.Fatalf("11 alternatives accepted: %v", ps)
 	}
 }

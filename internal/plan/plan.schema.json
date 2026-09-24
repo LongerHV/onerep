@@ -25,7 +25,7 @@
         "name": {"type": "string", "minLength": 1, "maxLength": 60},
         "only_weeks": {
           "description": "Restrict this day to these weeks (1-based).",
-          "type": "array", "minItems": 1, "uniqueItems": true,
+          "type": "array", "minItems": 1, "maxItems": 52, "uniqueItems": true,
           "items": {"type": "integer", "minimum": 1, "maximum": 52}
         },
         "groups": {"type": "array", "maxItems": 30, "items": {"$ref": "#/$defs/group"}}
@@ -47,7 +47,7 @@
       "additionalProperties": false,
       "properties": {
         "slug": {"$ref": "#/$defs/slug"},
-        "alternatives": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/slug"}},
+        "alternatives": {"type": "array", "maxItems": 10, "uniqueItems": true, "items": {"$ref": "#/$defs/slug"}},
         "notes": {"type": "string", "maxLength": 500},
         "sets": {"type": "array", "minItems": 1, "maxItems": 20, "items": {"$ref": "#/$defs/setLine"}}
       }
@@ -64,17 +64,17 @@
           "description": "Number of sets (per week). In a per-week array, null or 0 skips the line that week.",
           "oneOf": [
             {"$ref": "#/$defs/count"},
-            {"type": "array", "minItems": 1, "items": {"oneOf": [{"$ref": "#/$defs/count"}, {"type": "null"}]}}
+            {"type": "array", "minItems": 1, "maxItems": 52, "items": {"oneOf": [{"$ref": "#/$defs/count"}, {"type": "null"}]}}
           ]
         },
         "reps": {
           "description": "Reps (per week): a number, a range like \"6-10\", or \"AMRAP\".",
-          "oneOf": [{"$ref": "#/$defs/reps"}, {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/reps"}}]
+          "oneOf": [{"$ref": "#/$defs/reps"}, {"type": "array", "minItems": 1, "maxItems": 52, "items": {"$ref": "#/$defs/reps"}}]
         },
         "duration_s": {"description": "Duration in seconds for timed sets (per week).", "$ref": "#/$defs/seconds"},
         "rpe": {
           "description": "Informational RPE target (per week), shown alongside weight or pct_tm loads.",
-          "oneOf": [{"$ref": "#/$defs/rpe"}, {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/rpe"}}]
+          "oneOf": [{"$ref": "#/$defs/rpe"}, {"type": "array", "minItems": 1, "maxItems": 52, "items": {"$ref": "#/$defs/rpe"}}]
         },
         "load": {"$ref": "#/$defs/load"}
       }
@@ -88,19 +88,19 @@
       "properties": {
         "weight": {
           "description": "Absolute weight in the plan's unit (per week).",
-          "oneOf": [{"$ref": "#/$defs/weight"}, {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/weight"}}]
+          "oneOf": [{"$ref": "#/$defs/weight"}, {"type": "array", "minItems": 1, "maxItems": 52, "items": {"$ref": "#/$defs/weight"}}]
         },
         "pct_tm": {
           "description": "Fraction of the exercise's training max, e.g. 0.75 (per week).",
-          "oneOf": [{"$ref": "#/$defs/fraction"}, {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/fraction"}}]
+          "oneOf": [{"$ref": "#/$defs/fraction"}, {"type": "array", "minItems": 1, "maxItems": 52, "items": {"$ref": "#/$defs/fraction"}}]
         },
         "rpe": {
           "description": "Target RPE (per week); the weight comes from the recent estimated 1RM.",
-          "oneOf": [{"$ref": "#/$defs/rpe"}, {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/rpe"}}]
+          "oneOf": [{"$ref": "#/$defs/rpe"}, {"type": "array", "minItems": 1, "maxItems": 52, "items": {"$ref": "#/$defs/rpe"}}]
         },
         "drop_pct": {
           "description": "Fraction below the previous set's weight, e.g. 0.2 (per week). Not allowed on an exercise's first set line.",
-          "oneOf": [{"$ref": "#/$defs/drop"}, {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/drop"}}]
+          "oneOf": [{"$ref": "#/$defs/drop"}, {"type": "array", "minItems": 1, "maxItems": 52, "items": {"$ref": "#/$defs/drop"}}]
         }
       }
     },
@@ -115,7 +115,7 @@
     "seconds": {
       "oneOf": [
         {"type": "integer", "minimum": 0, "maximum": 3600},
-        {"type": "array", "minItems": 1, "items": {"type": "integer", "minimum": 0, "maximum": 3600}}
+        {"type": "array", "minItems": 1, "maxItems": 52, "items": {"type": "integer", "minimum": 0, "maximum": 3600}}
       ]
     },
     "weight": {"type": "number", "exclusiveMinimum": 0, "maximum": 1000},

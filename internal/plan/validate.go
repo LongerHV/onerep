@@ -81,13 +81,16 @@ func Validate(raw []byte, lookup Lookup) (Doc, Problems) {
 	} else if err != nil {
 		return doc, Problems{{Pointer: "", Message: "invalid JSON: " + err.Error()}}
 	}
+	if n := countValues(raw); n > MaxValues {
+		return doc, Problems{{Message: fmt.Sprintf("the document is too complex (%d values; at most %d): split it into smaller plans", n, MaxValues)}}
+	}
 	if ps := schemaProblems(raw); len(ps) > 0 {
-		return doc, ps
+		return doc, capProblems(ps)
 	}
 	if err := json.Unmarshal(raw, &doc); err != nil {
 		return doc, Problems{{Pointer: "", Message: err.Error()}}
 	}
-	return doc, semanticProblems(doc, lookup)
+	return doc, capProblems(semanticProblems(doc, lookup))
 }
 
 func position(raw []byte, offset int64) (line, col int) {
@@ -214,6 +217,9 @@ func semanticProblems(doc Doc, lookup Lookup) Problems {
 		}
 	}
 	checkSlug := func(ptr, slug string) bool {
+		if len(ps) > MaxProblems { // enough to fix first; capProblems reports the cut
+			return true
+		}
 		exists, hidden := lookup.Exercise(slug)
 		switch {
 		case !exists:
@@ -324,4 +330,39 @@ func totalSets(doc Doc) int {
 		}
 	}
 	return n
+}
+
+// MaxProblems bounds the problems reported for one document.
+const MaxProblems = 50
+
+// MaxValues bounds the JSON values in a document (a 52-week plan with
+// per-week arrays everywhere is about 25,000). It is checked before the
+// schema, whose cost grows with every value.
+const MaxValues = 50000
+
+// countValues counts the JSON values in raw, stopping just past MaxValues.
+func countValues(raw []byte) int {
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	n := 0
+	for n <= MaxValues {
+		tok, err := dec.Token()
+		if err != nil {
+			break
+		}
+		if _, isDelim := tok.(json.Delim); !isDelim || tok == json.Delim('[') || tok == json.Delim('{') {
+			n++
+		}
+	}
+	return n
+}
+
+// capProblems keeps the first MaxProblems problems and says so.
+func capProblems(ps Problems) Problems {
+	if len(ps) <= MaxProblems {
+		return ps
+	}
+	return append(ps[:MaxProblems:MaxProblems], Problem{
+		Message: fmt.Sprintf("showing the first %d problems; fix these first", MaxProblems),
+		Warning: !ps[:MaxProblems].HasErrors(),
+	})
 }
