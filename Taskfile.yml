@@ -111,6 +111,12 @@ tasks:
       - task: migrate:check
       - task: licenses:check
 
+  e2e:
+    desc: Browser end-to-end check of offline workout logging (headless Chromium from the flake's nixpkgs)
+    deps: [build]
+    cmds:
+      - CHROMIUM="$(nix build --no-link --print-out-paths --inputs-from . nixpkgs#chromium)/bin/chromium" ONEREP_BIN=bin/onerep node test/e2e/companion.mjs
+
   image:
     desc: Build the container image locally without pushing
     deps: [licenses]
