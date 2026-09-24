@@ -182,3 +182,15 @@ CREATE TABLE applied_ops (
   applied_at TEXT NOT NULL,
   PRIMARY KEY (user_id, op_id) -- op ids come from clients, so they are scoped per user
 );
+CREATE TABLE api_tokens (
+  id           TEXT NOT NULL PRIMARY KEY,
+  user_id      TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+  name         TEXT NOT NULL,
+  token_hash   TEXT NOT NULL, -- SHA-256 of the token; the token itself is never stored
+  scope        TEXT NOT NULL DEFAULT 'mcp' CHECK (scope IN ('mcp')),
+  last_used_at TEXT,
+  created_at   TEXT NOT NULL,
+  revoked_at   TEXT
+);
+CREATE UNIQUE INDEX api_tokens_hash ON api_tokens (token_hash);
+CREATE INDEX api_tokens_user ON api_tokens (user_id);
