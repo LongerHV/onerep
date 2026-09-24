@@ -1,0 +1,126 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://onerep.local/schema/plan.json",
+  "title": "onerep training plan",
+  "description": "A block of training weeks. Any value marked 'per week' may be a single value or an array with exactly one entry per week (entry i applies to week i+1).",
+  "type": "object",
+  "required": ["name", "weeks", "days"],
+  "additionalProperties": false,
+  "properties": {
+    "name": {"type": "string", "minLength": 1, "maxLength": 100},
+    "unit": {"description": "Unit of absolute weights in this plan. Defaults to the user's unit.", "enum": ["kg", "lb"]},
+    "weeks": {"description": "Number of weeks in the block.", "type": "integer", "minimum": 1, "maximum": 52},
+    "days": {
+      "description": "Training days in the order they are done each week.",
+      "type": "array", "minItems": 1, "maxItems": 14,
+      "items": {"$ref": "#/$defs/day"}
+    }
+  },
+  "$defs": {
+    "day": {
+      "type": "object",
+      "required": ["name", "groups"],
+      "additionalProperties": false,
+      "properties": {
+        "name": {"type": "string", "minLength": 1, "maxLength": 60},
+        "only_weeks": {
+          "description": "Restrict this day to these weeks (1-based).",
+          "type": "array", "minItems": 1, "uniqueItems": true,
+          "items": {"type": "integer", "minimum": 1, "maximum": 52}
+        },
+        "groups": {"type": "array", "maxItems": 30, "items": {"$ref": "#/$defs/group"}}
+      }
+    },
+    "group": {
+      "description": "Exercises done together. More than one exercise is a superset: A1, B1, A2, B2, ...",
+      "type": "object",
+      "required": ["exercises"],
+      "additionalProperties": false,
+      "properties": {
+        "rest_s": {"description": "Rest in seconds after each round (per week). Default 120.", "$ref": "#/$defs/seconds"},
+        "exercises": {"type": "array", "minItems": 1, "maxItems": 6, "items": {"$ref": "#/$defs/slot"}}
+      }
+    },
+    "slot": {
+      "type": "object",
+      "required": ["slug", "sets"],
+      "additionalProperties": false,
+      "properties": {
+        "slug": {"$ref": "#/$defs/slug"},
+        "alternatives": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/slug"}},
+        "notes": {"type": "string", "maxLength": 500},
+        "sets": {"type": "array", "minItems": 1, "maxItems": 20, "items": {"$ref": "#/$defs/setLine"}}
+      }
+    },
+    "setLine": {
+      "description": "One or more identical sets. Give reps or duration_s, not both.",
+      "type": "object",
+      "required": ["count"],
+      "additionalProperties": false,
+      "oneOf": [{"required": ["reps"]}, {"required": ["duration_s"]}],
+      "properties": {
+        "kind": {"enum": ["warmup", "working", "drop", "amrap"], "default": "working"},
+        "count": {
+          "description": "Number of sets (per week). In a per-week array, null or 0 skips the line that week.",
+          "oneOf": [
+            {"$ref": "#/$defs/count"},
+            {"type": "array", "minItems": 1, "items": {"oneOf": [{"$ref": "#/$defs/count"}, {"type": "null"}]}}
+          ]
+        },
+        "reps": {
+          "description": "Reps (per week): a number, a range like \"6-10\", or \"AMRAP\".",
+          "oneOf": [{"$ref": "#/$defs/reps"}, {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/reps"}}]
+        },
+        "duration_s": {"description": "Duration in seconds for timed sets (per week).", "$ref": "#/$defs/seconds"},
+        "rpe": {
+          "description": "Informational RPE target (per week), shown alongside weight or pct_tm loads.",
+          "oneOf": [{"$ref": "#/$defs/rpe"}, {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/rpe"}}]
+        },
+        "load": {"$ref": "#/$defs/load"}
+      }
+    },
+    "load": {
+      "description": "How the weight is chosen. Exactly one key.",
+      "type": "object",
+      "minProperties": 1,
+      "maxProperties": 1,
+      "additionalProperties": false,
+      "properties": {
+        "weight": {
+          "description": "Absolute weight in the plan's unit (per week).",
+          "oneOf": [{"$ref": "#/$defs/weight"}, {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/weight"}}]
+        },
+        "pct_tm": {
+          "description": "Fraction of the exercise's training max, e.g. 0.75 (per week).",
+          "oneOf": [{"$ref": "#/$defs/fraction"}, {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/fraction"}}]
+        },
+        "rpe": {
+          "description": "Target RPE (per week); the weight comes from the recent estimated 1RM.",
+          "oneOf": [{"$ref": "#/$defs/rpe"}, {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/rpe"}}]
+        },
+        "drop_pct": {
+          "description": "Fraction below the previous set's weight, e.g. 0.2 (per week). Not allowed on an exercise's first set line.",
+          "oneOf": [{"$ref": "#/$defs/drop"}, {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/drop"}}]
+        }
+      }
+    },
+    "count": {"type": "integer", "minimum": 0, "maximum": 20},
+    "reps": {
+      "oneOf": [
+        {"type": "integer", "minimum": 1, "maximum": 100},
+        {"type": "string", "pattern": "^([1-9][0-9]?-[1-9][0-9]?|AMRAP)$"}
+      ]
+    },
+    "rpe": {"type": "number", "minimum": 6, "maximum": 10, "multipleOf": 0.5},
+    "seconds": {
+      "oneOf": [
+        {"type": "integer", "minimum": 0, "maximum": 3600},
+        {"type": "array", "minItems": 1, "items": {"type": "integer", "minimum": 0, "maximum": 3600}}
+      ]
+    },
+    "weight": {"type": "number", "exclusiveMinimum": 0, "maximum": 1000},
+    "fraction": {"type": "number", "exclusiveMinimum": 0, "maximum": 1.5},
+    "drop": {"type": "number", "exclusiveMinimum": 0, "exclusiveMaximum": 1},
+    "slug": {"type": "string", "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$", "maxLength": 64}
+  }
+}

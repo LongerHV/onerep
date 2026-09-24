@@ -1,0 +1,726 @@
+[
+  [
+    {
+      "week": 1,
+      "day": 0,
+      "name": "Upper A",
+      "groups": [
+        {
+          "rest_s": 180,
+          "exercises": [
+            {
+              "slug": "barbell-bench-press",
+              "name": "barbell-bench-press",
+              "alternatives": [
+                "dumbbell-bench-press"
+              ],
+              "notes": "pause first rep",
+              "sets": [
+                {
+                  "kind": "warmup",
+                  "reps": 5,
+                  "load_kind": "pct_tm",
+                  "load_value": 0.5
+                },
+                {
+                  "kind": "warmup",
+                  "reps": 5,
+                  "load_kind": "pct_tm",
+                  "load_value": 0.5
+                },
+                {
+                  "kind": "working",
+                  "reps": 5,
+                  "target_rpe": 7,
+                  "load_kind": "rpe",
+                  "load_value": 7
+                },
+                {
+                  "kind": "working",
+                  "reps": 5,
+                  "target_rpe": 7,
+                  "load_kind": "rpe",
+                  "load_value": 7
+                },
+                {
+                  "kind": "working",
+                  "reps": 5,
+                  "target_rpe": 7,
+                  "load_kind": "rpe",
+                  "load_value": 7
+                },
+                {
+                  "kind": "drop",
+                  "reps": 10,
+                  "load_kind": "drop_pct",
+                  "load_value": 0.2
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "rest_s": 90,
+          "exercises": [
+            {
+              "slug": "pull-up",
+              "name": "pull-up",
+              "sets": [
+                {
+                  "kind": "working",
+                  "reps": "6-10",
+                  "target_rpe": 8
+                },
+                {
+                  "kind": "working",
+                  "reps": "6-10",
+                  "target_rpe": 8
+                },
+                {
+                  "kind": "working",
+                  "reps": "6-10",
+                  "target_rpe": 8
+                }
+              ]
+            },
+            {
+              "slug": "cable-lateral-raise",
+              "name": "cable-lateral-raise",
+              "sets": [
+                {
+                  "kind": "working",
+                  "reps": 15,
+                  "load_kind": "weight",
+                  "load_value": 7.5
+                },
+                {
+                  "kind": "working",
+                  "reps": 15,
+                  "load_kind": "weight",
+                  "load_value": 7.5
+                },
+                {
+                  "kind": "working",
+                  "reps": 15,
+                  "load_kind": "weight",
+                  "load_value": 7.5
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "week": 1,
+      "day": 1,
+      "name": "Lower A",
+      "groups": [
+        {
+          "rest_s": 120,
+          "exercises": [
+            {
+              "slug": "barbell-back-squat",
+              "name": "barbell-back-squat",
+              "sets": [
+                {
+                  "kind": "working",
+                  "reps": 5,
+                  "load_kind": "pct_tm",
+                  "load_value": 0.75
+                },
+                {
+                  "kind": "working",
+                  "reps": 5,
+                  "load_kind": "pct_tm",
+                  "load_value": 0.75
+                },
+                {
+                  "kind": "working",
+                  "reps": 5,
+                  "load_kind": "pct_tm",
+                  "load_value": 0.75
+                },
+                {
+                  "kind": "working",
+                  "reps": 5,
+                  "load_kind": "pct_tm",
+                  "load_value": 0.75
+                },
+                {
+                  "kind": "working",
+                  "reps": 5,
+                  "load_kind": "pct_tm",
+                  "load_value": 0.75
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "rest_s": 120,
+          "exercises": [
+            {
+              "slug": "plank",
+              "name": "plank",
+              "sets": [
+                {
+                  "kind": "working",
+                  "duration_s": 45
+                },
+                {
+                  "kind": "working",
+                  "duration_s": 45
+                },
+                {
+                  "kind": "working",
+                  "duration_s": 45
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  [
+    {
+      "week": 2,
+      "day": 0,
+      "name": "Upper A",
+      "groups": [
+        {
+          "rest_s": 180,
+          "exercises": [
+            {
+              "slug": "barbell-bench-press",
+              "name": "barbell-bench-press",
+              "alternatives": [
+                "dumbbell-bench-press"
+              ],
+              "notes": "pause first rep",
+              "sets": [
+                {
+                  "kind": "warmup",
+                  "reps": 5,
+                  "load_kind": "pct_tm",
+                  "load_value": 0.5
+                },
+                {
+                  "kind": "warmup",
+                  "reps": 5,
+                  "load_kind": "pct_tm",
+                  "load_value": 0.5
+                },
+                {
+                  "kind": "working",
+                  "reps": 5,
+                  "target_rpe": 8,
+                  "load_kind": "rpe",
+                  "load_value": 8
+                },
+                {
+                  "kind": "working",
+                  "reps": 5,
+                  "target_rpe": 8,
+                  "load_kind": "rpe",
+                  "load_value": 8
+                },
+                {
+                  "kind": "working",
+                  "reps": 5,
+                  "target_rpe": 8,
+                  "load_kind": "rpe",
+                  "load_value": 8
+                },
+                {
+                  "kind": "drop",
+                  "reps": 10,
+                  "load_kind": "drop_pct",
+                  "load_value": 0.2
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "rest_s": 90,
+          "exercises": [
+            {
+              "slug": "pull-up",
+              "name": "pull-up",
+              "sets": [
+                {
+                  "kind": "working",
+                  "reps": "6-10",
+                  "target_rpe": 8
+                },
+                {
+                  "kind": "working",
+                  "reps": "6-10",
+                  "target_rpe": 8
+                },
+                {
+                  "kind": "working",
+                  "reps": "6-10",
+                  "target_rpe": 8
+                }
+              ]
+            },
+            {
+              "slug": "cable-lateral-raise",
+              "name": "cable-lateral-raise",
+              "sets": [
+                {
+                  "kind": "working",
+                  "reps": 15,
+                  "load_kind": "weight",
+                  "load_value": 7.5
+                },
+                {
+                  "kind": "working",
+                  "reps": 15,
+                  "load_kind": "weight",
+                  "load_value": 7.5
+                },
+                {
+                  "kind": "working",
+                  "reps": 15,
+                  "load_kind": "weight",
+                  "load_value": 7.5
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "week": 2,
+      "day": 1,
+      "name": "Lower A",
+      "groups": [
+        {
+          "rest_s": 120,
+          "exercises": [
+            {
+              "slug": "barbell-back-squat",
+              "name": "barbell-back-squat",
+              "sets": [
+                {
+                  "kind": "working",
+                  "reps": 4,
+                  "load_kind": "pct_tm",
+                  "load_value": 0.8
+                },
+                {
+                  "kind": "working",
+                  "reps": 4,
+                  "load_kind": "pct_tm",
+                  "load_value": 0.8
+                },
+                {
+                  "kind": "working",
+                  "reps": 4,
+                  "load_kind": "pct_tm",
+                  "load_value": 0.8
+                },
+                {
+                  "kind": "working",
+                  "reps": 4,
+                  "load_kind": "pct_tm",
+                  "load_value": 0.8
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "rest_s": 120,
+          "exercises": [
+            {
+              "slug": "plank",
+              "name": "plank",
+              "sets": [
+                {
+                  "kind": "working",
+                  "duration_s": 50
+                },
+                {
+                  "kind": "working",
+                  "duration_s": 50
+                },
+                {
+                  "kind": "working",
+                  "duration_s": 50
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  [
+    {
+      "week": 3,
+      "day": 0,
+      "name": "Upper A",
+      "groups": [
+        {
+          "rest_s": 180,
+          "exercises": [
+            {
+              "slug": "barbell-bench-press",
+              "name": "barbell-bench-press",
+              "alternatives": [
+                "dumbbell-bench-press"
+              ],
+              "notes": "pause first rep",
+              "sets": [
+                {
+                  "kind": "warmup",
+                  "reps": 5,
+                  "load_kind": "pct_tm",
+                  "load_value": 0.5
+                },
+                {
+                  "kind": "warmup",
+                  "reps": 5,
+                  "load_kind": "pct_tm",
+                  "load_value": 0.5
+                },
+                {
+                  "kind": "working",
+                  "reps": 5,
+                  "target_rpe": 9,
+                  "load_kind": "rpe",
+                  "load_value": 9
+                },
+                {
+                  "kind": "working",
+                  "reps": 5,
+                  "target_rpe": 9,
+                  "load_kind": "rpe",
+                  "load_value": 9
+                },
+                {
+                  "kind": "working",
+                  "reps": 5,
+                  "target_rpe": 9,
+                  "load_kind": "rpe",
+                  "load_value": 9
+                },
+                {
+                  "kind": "working",
+                  "reps": 5,
+                  "target_rpe": 9,
+                  "load_kind": "rpe",
+                  "load_value": 9
+                },
+                {
+                  "kind": "drop",
+                  "reps": 10,
+                  "load_kind": "drop_pct",
+                  "load_value": 0.2
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "rest_s": 90,
+          "exercises": [
+            {
+              "slug": "pull-up",
+              "name": "pull-up",
+              "sets": [
+                {
+                  "kind": "working",
+                  "reps": "6-10",
+                  "target_rpe": 8
+                },
+                {
+                  "kind": "working",
+                  "reps": "6-10",
+                  "target_rpe": 8
+                },
+                {
+                  "kind": "working",
+                  "reps": "6-10",
+                  "target_rpe": 8
+                }
+              ]
+            },
+            {
+              "slug": "cable-lateral-raise",
+              "name": "cable-lateral-raise",
+              "sets": [
+                {
+                  "kind": "working",
+                  "reps": 15,
+                  "load_kind": "weight",
+                  "load_value": 7.5
+                },
+                {
+                  "kind": "working",
+                  "reps": 15,
+                  "load_kind": "weight",
+                  "load_value": 7.5
+                },
+                {
+                  "kind": "working",
+                  "reps": 15,
+                  "load_kind": "weight",
+                  "load_value": 7.5
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "week": 3,
+      "day": 1,
+      "name": "Lower A",
+      "groups": [
+        {
+          "rest_s": 120,
+          "exercises": [
+            {
+              "slug": "barbell-back-squat",
+              "name": "barbell-back-squat",
+              "sets": [
+                {
+                  "kind": "working",
+                  "reps": 3,
+                  "load_kind": "pct_tm",
+                  "load_value": 0.85
+                },
+                {
+                  "kind": "working",
+                  "reps": 3,
+                  "load_kind": "pct_tm",
+                  "load_value": 0.85
+                },
+                {
+                  "kind": "working",
+                  "reps": 3,
+                  "load_kind": "pct_tm",
+                  "load_value": 0.85
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "rest_s": 120,
+          "exercises": [
+            {
+              "slug": "plank",
+              "name": "plank",
+              "sets": [
+                {
+                  "kind": "working",
+                  "duration_s": 55
+                },
+                {
+                  "kind": "working",
+                  "duration_s": 55
+                },
+                {
+                  "kind": "working",
+                  "duration_s": 55
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  [
+    {
+      "week": 4,
+      "day": 0,
+      "name": "Upper A",
+      "groups": [
+        {
+          "rest_s": 180,
+          "exercises": [
+            {
+              "slug": "barbell-bench-press",
+              "name": "barbell-bench-press",
+              "alternatives": [
+                "dumbbell-bench-press"
+              ],
+              "notes": "pause first rep",
+              "sets": [
+                {
+                  "kind": "warmup",
+                  "reps": 5,
+                  "load_kind": "pct_tm",
+                  "load_value": 0.5
+                },
+                {
+                  "kind": "warmup",
+                  "reps": 5,
+                  "load_kind": "pct_tm",
+                  "load_value": 0.5
+                },
+                {
+                  "kind": "working",
+                  "reps": 5,
+                  "target_rpe": 6,
+                  "load_kind": "rpe",
+                  "load_value": 6
+                },
+                {
+                  "kind": "working",
+                  "reps": 5,
+                  "target_rpe": 6,
+                  "load_kind": "rpe",
+                  "load_value": 6
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "rest_s": 60,
+          "exercises": [
+            {
+              "slug": "pull-up",
+              "name": "pull-up",
+              "sets": [
+                {
+                  "kind": "working",
+                  "reps": "6-10",
+                  "target_rpe": 8
+                },
+                {
+                  "kind": "working",
+                  "reps": "6-10",
+                  "target_rpe": 8
+                },
+                {
+                  "kind": "working",
+                  "reps": "6-10",
+                  "target_rpe": 8
+                }
+              ]
+            },
+            {
+              "slug": "cable-lateral-raise",
+              "name": "cable-lateral-raise",
+              "sets": [
+                {
+                  "kind": "working",
+                  "reps": 15,
+                  "load_kind": "weight",
+                  "load_value": 7.5
+                },
+                {
+                  "kind": "working",
+                  "reps": 15,
+                  "load_kind": "weight",
+                  "load_value": 7.5
+                },
+                {
+                  "kind": "working",
+                  "reps": 15,
+                  "load_kind": "weight",
+                  "load_value": 7.5
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "week": 4,
+      "day": 1,
+      "name": "Lower A",
+      "groups": [
+        {
+          "rest_s": 120,
+          "exercises": [
+            {
+              "slug": "barbell-back-squat",
+              "name": "barbell-back-squat",
+              "sets": [
+                {
+                  "kind": "working",
+                  "reps": 5,
+                  "load_kind": "pct_tm",
+                  "load_value": 0.6
+                },
+                {
+                  "kind": "working",
+                  "reps": 5,
+                  "load_kind": "pct_tm",
+                  "load_value": 0.6
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "rest_s": 120,
+          "exercises": [
+            {
+              "slug": "plank",
+              "name": "plank",
+              "sets": [
+                {
+                  "kind": "working",
+                  "duration_s": 30
+                },
+                {
+                  "kind": "working",
+                  "duration_s": 30
+                },
+                {
+                  "kind": "working",
+                  "duration_s": 30
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "week": 4,
+      "day": 2,
+      "name": "Deload extra",
+      "groups": [
+        {
+          "rest_s": 120,
+          "exercises": [
+            {
+              "slug": "dumbbell-curl",
+              "name": "dumbbell-curl",
+              "sets": [
+                {
+                  "kind": "working",
+                  "reps": "AMRAP",
+                  "load_kind": "weight",
+                  "load_value": 10
+                },
+                {
+                  "kind": "working",
+                  "reps": "AMRAP",
+                  "load_kind": "weight",
+                  "load_value": 10
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+]
