@@ -112,3 +112,18 @@ func TestDevLogin(t *testing.T) {
 		}
 	}
 }
+
+// API requests can't follow a redirect to the login page: they get 401.
+func TestRequireUserAPIGetsUnauthorized(t *testing.T) {
+	h := RequireUser(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/stats/muscles", nil))
+	if rec.Code != http.StatusUnauthorized || rec.Header().Get("Location") != "" {
+		t.Fatalf("GET /api/… without a session = %d (Location %q), want 401", rec.Code, rec.Header().Get("Location"))
+	}
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/history", nil))
+	if rec.Code != http.StatusSeeOther {
+		t.Fatalf("GET /history without a session = %d, want a redirect", rec.Code)
+	}
+}

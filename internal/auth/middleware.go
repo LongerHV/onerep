@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"strings"
 )
 
 const (
@@ -17,7 +18,8 @@ const (
 )
 
 // RequireUser rejects unauthenticated requests. Page loads are redirected to
-// the login page, htmx requests get HX-Redirect, everything else gets 401.
+// the login page, htmx requests get HX-Redirect, API requests and everything
+// else get 401.
 func RequireUser(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if _, ok := FromContext(r.Context()); ok {
@@ -26,6 +28,9 @@ func RequireUser(next http.Handler) http.Handler {
 		}
 		login := "/auth/login?next=" + url.QueryEscape(r.URL.RequestURI())
 		switch {
+		case strings.HasPrefix(r.URL.Path, "/api/"):
+			// Scripts can't follow a redirect to the IdP; tell them to sign in again.
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
 		case r.Header.Get("HX-Request") == "true":
 			w.Header().Set("HX-Redirect", login)
 			w.WriteHeader(http.StatusUnauthorized)

@@ -15,6 +15,7 @@ import (
 	"github.com/LongerHV/onerep/internal/auth"
 	"github.com/LongerHV/onerep/internal/exercise"
 	"github.com/LongerHV/onerep/internal/plan"
+	"github.com/LongerHV/onerep/internal/stats"
 	"github.com/LongerHV/onerep/internal/store"
 	"github.com/LongerHV/onerep/internal/training"
 	"github.com/LongerHV/onerep/internal/web/views"
@@ -31,6 +32,7 @@ type Server struct {
 	Account   *account.Service
 	Plans     *plan.Service
 	Training  *training.Service
+	Stats     *stats.Service
 }
 
 // Routes returns the application's HTTP handler.
@@ -70,6 +72,7 @@ func (s *Server) Routes() http.Handler {
 		s.planRoutes(r)
 		s.sessionRoutes(r)
 		s.historyRoutes(r)
+		s.statsRoutes(r)
 		s.equipmentRoutes(r)
 		r.Get("/settings", s.settings)
 		r.Post("/settings", s.saveSettings)

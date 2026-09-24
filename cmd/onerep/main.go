@@ -17,6 +17,7 @@ import (
 	"github.com/LongerHV/onerep/internal/config"
 	"github.com/LongerHV/onerep/internal/exercise"
 	"github.com/LongerHV/onerep/internal/plan"
+	"github.com/LongerHV/onerep/internal/stats"
 	"github.com/LongerHV/onerep/internal/store"
 	"github.com/LongerHV/onerep/internal/training"
 	"github.com/LongerHV/onerep/internal/web"
@@ -111,6 +112,7 @@ func serve(ctx context.Context, cfg config.Config) error {
 	}
 	srv.Plans = &plan.Service{Store: db, Exercises: srv.Exercises, History: db}
 	srv.Training = &training.Service{Store: db, Plans: srv.Plans, Exercises: srv.Exercises}
+	srv.Stats = &stats.Service{Store: db, Exercises: srv.Exercises}
 	if cfg.OIDC.Issuer != "" {
 		srv.OIDC, err = auth.NewOIDC(ctx, cfg.OIDC.Issuer, cfg.OIDC.ClientID, cfg.OIDC.ClientSecret, cfg.BaseURL, sessions)
 		if err != nil {
