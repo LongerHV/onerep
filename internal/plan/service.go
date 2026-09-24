@@ -6,6 +6,7 @@ import (
 	_ "embed"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"slices"
 	"strings"
 
@@ -462,17 +463,17 @@ func (s *Service) Compare(ctx context.Context, user store.User, versionID string
 
 	c := s.catalogFor(ctx, user)
 	for w := 1; w <= max(baseDoc.Weeks, targetDoc.Weeks); w++ {
-		names := dayNames(baseDoc, w)
-		for _, n := range dayNames(targetDoc, w) {
-			if !slices.Contains(names, n) {
-				names = append(names, n)
+		keys := dayKeys(baseDoc, w)
+		for _, k := range dayKeys(targetDoc, w) {
+			if !slices.Contains(keys, k) {
+				keys = append(keys, k)
 			}
 		}
-		for _, name := range names {
-			a := dayLinesByName(c, baseDoc, w, name)
-			b := dayLinesByName(c, targetDoc, w, name)
+		for _, k := range keys {
+			a := dayLinesByKey(c, baseDoc, w, k)
+			b := dayLinesByKey(c, targetDoc, w, k)
 			if d := DiffLines(a, b); Changed(d) {
-				cmp.Days = append(cmp.Days, DayChange{Week: w, Name: name, Lines: d})
+				cmp.Days = append(cmp.Days, DayChange{Week: w, Name: k.label(), Lines: d})
 			}
 		}
 	}
@@ -490,20 +491,44 @@ func lines(raw []byte) []string {
 	return strings.Split(Pretty(raw), "\n")
 }
 
-func dayNames(doc Doc, week int) []string {
-	var out []string
+// dayKey identifies a day within a week across versions: its name and which
+// occurrence of that name it is (weeks often repeat names, like A/B/A).
+type dayKey struct {
+	name string
+	nth  int // 1 for the first day with this name in the week
+}
+
+func (k dayKey) label() string {
+	if k.nth == 1 {
+		return k.name
+	}
+	suffix := "th"
+	switch k.nth {
+	case 2:
+		suffix = "nd"
+	case 3:
+		suffix = "rd"
+	}
+	return fmt.Sprintf("%s (%d%s)", k.name, k.nth, suffix)
+}
+
+func dayKeys(doc Doc, week int) []dayKey {
 	if week > doc.Weeks {
 		return nil
 	}
+	var out []dayKey
+	seen := map[string]int{}
 	for _, i := range DaysForWeek(doc, week) {
-		out = append(out, doc.Days[i].Name)
+		name := doc.Days[i].Name
+		seen[name]++
+		out = append(out, dayKey{name, seen[name]})
 	}
 	return out
 }
 
-func dayLinesByName(c *catalog, doc Doc, week int, name string) []string {
-	for d, i := range DaysForWeek(doc, week) {
-		if week <= doc.Weeks && doc.Days[i].Name == name {
+func dayLinesByKey(c *catalog, doc Doc, week int, k dayKey) []string {
+	for d, key := range dayKeys(doc, week) {
+		if key == k {
 			day, _ := c.day(doc, week, d)
 			return DayLines(day, c.user.Unit)
 		}

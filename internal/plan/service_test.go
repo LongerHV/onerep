@@ -222,3 +222,30 @@ func TestPlanSurvivesDeletedCustomExercise(t *testing.T) {
 		t.Fatalf("next = %+v, %v", n, err)
 	}
 }
+
+// Weeks often repeat a day name (A/B/A); each occurrence is compared on its own.
+func TestCompareRepeatedDayNames(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	doc := func(thirdSets int) []byte {
+		return []byte(`{"name": "ABA", "weeks": 1, "days": [
+			{"name": "A", "groups": [{"exercises": [{"slug": "barbell-back-squat", "sets": [{"count": 3, "reps": 5}]}]}]},
+			{"name": "B", "groups": [{"exercises": [{"slug": "pull-up", "sets": [{"count": 3, "reps": 5}]}]}]},
+			{"name": "A", "groups": [{"exercises": [{"slug": "barbell-back-squat", "sets": [{"count": ` + string(rune('0'+thirdSets)) + `, "reps": 5}]}]}]}]}`)
+	}
+	p, _, err := e.svc.Create(ctx, e.alice, doc(3), SaveActivate, "web", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	draft, _, err := e.svc.Save(ctx, e.alice, p.ID, doc(5), SaveDraft, "web", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cmp, err := e.svc.Compare(ctx, e.alice, draft.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cmp.Days) != 1 || cmp.Days[0].Name != "A (2nd)" || cmp.Days[0].Week != 1 {
+		t.Fatalf("changed days = %+v", cmp.Days)
+	}
+}
