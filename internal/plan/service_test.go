@@ -376,3 +376,21 @@ func TestSaveDraftNeverTouchesActiveVersions(t *testing.T) {
 		t.Fatalf("invalid doc: %v", err)
 	}
 }
+
+// An AI may only replace its own drafts: a draft the user wrote in the web
+// editor is never overwritten (there is no undo).
+func TestSaveDraftKeepsOthersDrafts(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	doc := []byte(`{"name":"Mine","weeks":1,"days":[{"name":"D","groups":[{"exercises":[{"slug":"barbell-back-squat","sets":[{"count":3,"reps":5}]}]}]}]}`)
+	_, v, err := e.svc.Create(ctx, e.alice, doc, SaveDraft, "web", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.svc.SaveDraft(ctx, e.alice, DraftInput{VersionID: v.ID, Doc: doc, Source: "mcp"}); !errors.Is(err, ErrForeignDraft) {
+		t.Fatalf("replacing the user's draft: %v", err)
+	}
+	if got, _ := e.svc.Version(ctx, e.alice, v.ID); got.Source != "web" {
+		t.Fatalf("the user's draft was taken over: %+v", got)
+	}
+}

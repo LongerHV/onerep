@@ -113,6 +113,8 @@ func explain(ctx context.Context, tool string, err error) error {
 		return err
 	case errors.Is(err, store.ErrNotFound):
 		return errors.New("not found")
+	case errors.Is(err, plan.ErrForeignDraft):
+		return errors.New("that draft was written by the user; don't replace it, pass plan_id to add a new draft version instead")
 	case errors.Is(err, store.ErrNotDraft):
 		return errors.New("only draft versions can be changed; pass plan_id to add a new draft version instead")
 	default:

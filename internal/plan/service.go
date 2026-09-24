@@ -574,6 +574,10 @@ func (s *Service) AdvanceFrom(ctx context.Context, user store.User, planID strin
 	return s.Store.SetActivePlan(ctx, user.ID, store.ActivePlan{PlanID: planID, Week: w, Day: d})
 }
 
+// ErrForeignDraft refuses replacing a draft saved from somewhere else (e.g. the
+// AI replacing a draft the user wrote in the web editor).
+var ErrForeignDraft = errors.New("this draft was saved from elsewhere and can't be replaced")
+
 // DraftInput is a plan document saved as a draft: a new plan (no ids), a new
 // version of PlanID, or a replacement for the draft VersionID.
 type DraftInput struct {
@@ -601,6 +605,13 @@ func (s *Service) SaveDraft(ctx context.Context, user store.User, in DraftInput)
 	var err error
 	switch {
 	case in.VersionID != "":
+		var current store.PlanVersion
+		if current, err = s.Store.PlanVersionByID(ctx, user.ID, in.VersionID); err != nil {
+			return Draft{}, err
+		}
+		if current.Status == store.PlanDraft && current.Source != in.Source {
+			return Draft{}, ErrForeignDraft
+		}
 		d.Version, err = s.Store.UpdateDraftVersion(ctx, user.ID, in.VersionID, raw, in.Source, in.Note)
 		if err == nil {
 			d.Plan, err = s.Store.PlanByID(ctx, user.ID, d.Version.PlanID)
