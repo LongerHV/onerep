@@ -1,0 +1,148 @@
+package views
+
+import (
+	"strconv"
+
+	"github.com/LongerHV/onerep/internal/store"
+)
+
+templ HistoryList(p Page, sessions []store.SessionSummary, pageNo int, more bool) {
+	<h1 class={ h1 }>History</h1>
+	if len(sessions) == 0 {
+		<p class="mt-4 text-zinc-500">No workouts yet.</p>
+	}
+	<ul class="mt-4 divide-y divide-zinc-200 dark:divide-zinc-800">
+		for _, s := range sessions {
+			<li>
+				<a href={ templ.URL("/history/" + s.ID) } class="flex items-baseline justify-between gap-4 py-2 hover:bg-zinc-100 dark:hover:bg-zinc-900">
+					<span>
+						{ s.Name }
+						if s.FinishedAt == nil {
+							<span class={ badge }>in progress</span>
+						}
+					</span>
+					<span class="text-sm text-zinc-500">{ s.StartedAt.Local().Format("2006-01-02 15:04") } · { strconv.Itoa(s.Sets) } sets</span>
+				</a>
+			</li>
+		}
+	</ul>
+	<div class="mt-4 flex gap-4">
+		if pageNo > 0 {
+			<a href={ templ.URL("/history?page=" + strconv.Itoa(pageNo-1)) } class="underline">Newer</a>
+		}
+		if more {
+			<a href={ templ.URL("/history?page=" + strconv.Itoa(pageNo+1)) } class="underline">Older</a>
+		}
+	</div>
+}
+
+templ HistoryDetailPage(p Page, d HistoryDetail) {
+	<p class="text-sm"><a href="/history" class="underline">History</a></p>
+	<div class="flex flex-wrap items-start justify-between gap-2">
+		<div>
+			<h1 class={ h1 }>{ d.Session.Name }</h1>
+			<p class="text-sm text-zinc-500">
+				{ d.Session.StartedAt.Local().Format("Mon 2006-01-02 15:04") }
+				if d.Session.FinishedAt == nil {
+					<span class={ badge }>in progress</span>
+				}
+			</p>
+		</div>
+		<div class="flex flex-wrap gap-2">
+			if d.Session.FinishedAt == nil {
+				<a href={ templ.URL("/sessions/" + d.Session.ID + "/live") } class={ btn }>Continue workout</a>
+				<form method="post" action={ templ.URL("/history/" + d.Session.ID + "/finish") }>
+					@CSRF(p)
+					<button type="submit" class={ btnSecondary }>Mark finished</button>
+				</form>
+			}
+			<form method="post" action={ templ.URL("/history/" + d.Session.ID + "/delete") } onsubmit="return confirm('Delete this workout and all its sets?')">
+				@CSRF(p)
+				<button type="submit" class={ btnDanger }>Delete workout</button>
+			</form>
+		</div>
+	</div>
+	if d.Error != "" {
+		<p class={ errorText + " mt-4" }>{ d.Error }</p>
+	}
+	for _, g := range d.Groups {
+		<h2 class={ h2 }>{ d.Exercises[g.Slug].Name }</h2>
+		<ul class="mt-2 space-y-2">
+			for _, set := range g.Sets {
+				<li class="flex flex-wrap items-end gap-2">
+					<form method="post" action={ templ.URL("/history/" + d.Session.ID + "/sets") } class="flex flex-wrap items-end gap-2">
+						@CSRF(p)
+						<input type="hidden" name="set_id" value={ set.ID }/>
+						<input type="hidden" name="slug" value={ set.Slug }/>
+						<input type="hidden" name="kind" value={ set.Kind }/>
+						<input type="hidden" name="group_pos" value={ strconv.Itoa(set.GroupPos) }/>
+						<input type="hidden" name="exercise_pos" value={ strconv.Itoa(set.ExercisePos) }/>
+						<input type="hidden" name="set_pos" value={ strconv.Itoa(set.SetPos) }/>
+						if set.Kind != "working" {
+							<span class={ badge }>{ set.Kind }</span>
+						}
+						@setFields(p, d.Exercises[g.Slug].Measurement, set)
+						<button type="submit" class={ btnSecondary }>Save</button>
+					</form>
+					<form method="post" action={ templ.URL("/history/" + d.Session.ID + "/sets/" + set.ID + "/delete") }>
+						@CSRF(p)
+						<button type="submit" class="text-sm text-zinc-500 hover:underline">Delete</button>
+					</form>
+				</li>
+			}
+		</ul>
+	}
+	<h2 class={ h2 }>Add a set</h2>
+	<form method="post" action={ templ.URL("/history/" + d.Session.ID + "/sets") } class="mt-2 flex flex-wrap items-end gap-2">
+		@CSRF(p)
+		<input type="hidden" name="group_pos" value={ strconv.Itoa(d.NextGroupPos) }/>
+		<label class={ label }>
+			Exercise
+			<select name="slug" class={ input }>
+				for _, e := range d.Catalog {
+					<option value={ e.Slug }>{ e.Name }</option>
+				}
+			</select>
+		</label>
+		@setFields(p, "all", store.Set{})
+		<button type="submit" class={ btn }>Add</button>
+	</form>
+	<h2 class={ h2 }>Notes</h2>
+	<form method="post" action={ templ.URL("/history/" + d.Session.ID + "/notes") } class="mt-2">
+		@CSRF(p)
+		<textarea name="notes" rows="3" class={ input } aria-label="Notes">{ d.Session.Notes }</textarea>
+		<button type="submit" class={ btnSecondary + " mt-2" }>Save notes</button>
+	</form>
+}
+
+// setFields shows the inputs a measurement records ("all" shows every field).
+templ setFields(p Page, measurement string, set store.Set) {
+	if measurement == "all" || measurement == "weight_reps" || measurement == "bw_reps" {
+		<label class="text-sm">
+			Weight ({ p.Identity.User.Unit })
+			<input name="weight" inputmode="decimal" value={ optWeight(set.WeightKg, p.Identity.User.Unit) } class={ input + " w-24" }/>
+		</label>
+	}
+	if measurement == "all" || measurement == "weight_reps" || measurement == "bw_reps" || measurement == "reps" {
+		<label class="text-sm">
+			Reps
+			<input name="reps" inputmode="numeric" value={ optInt(set.Reps) } class={ input + " w-20" }/>
+		</label>
+		<label class="text-sm">
+			RPE
+			<input name="rpe" inputmode="decimal" value={ optFloat(set.RPE) } class={ input + " w-20" }/>
+		</label>
+	}
+	if measurement == "all" || measurement == "time" || measurement == "distance_time" {
+		<label class="text-sm">
+			Seconds
+			<input name="duration" inputmode="numeric" value={ optInt(set.DurationS) } class={ input + " w-24" }/>
+		</label>
+	}
+	if measurement == "all" || measurement == "distance_time" {
+		<label class="text-sm">
+			Metres
+			<input name="distance" inputmode="decimal" value={ optFloat(set.DistanceM) } class={ input + " w-24" }/>
+		</label>
+	}
+}

@@ -48,7 +48,14 @@ func (s *Server) home(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
-	render(w, r, http.StatusOK, views.Home(page(r, "Home"), views.HomePage{Next: next}))
+	home := views.HomePage{Next: next}
+	if open, err := s.Training.Open(r.Context(), user(r)); err == nil {
+		home.Open = &open
+	} else if !errors.Is(err, store.ErrNotFound) {
+		s.fail(w, r, err)
+		return
+	}
+	render(w, r, http.StatusOK, views.Home(page(r, "Home"), home))
 }
 
 func (s *Server) planList(w http.ResponseWriter, r *http.Request) {

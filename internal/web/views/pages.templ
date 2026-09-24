@@ -7,6 +7,12 @@ templ Home(p Page, h HomePage) {
 	if h.Notice != "" {
 		<p class="mt-4 rounded bg-amber-100 p-2 text-sm dark:bg-amber-950">{ h.Notice }</p>
 	}
+	if h.Open != nil {
+		<div class={ card + " mt-4" }>
+			<p class="font-medium">Workout in progress: { h.Open.Name }</p>
+			<a href={ templ.URL("/sessions/" + h.Open.ID + "/live") } class={ btn + " mt-3" }>Continue workout</a>
+		</div>
+	}
 	switch  {
 		case h.Next == nil:
 			<p class="mt-2 text-zinc-600 dark:text-zinc-400">
@@ -16,6 +22,7 @@ templ Home(p Page, h HomePage) {
 				<li><a href="/exercises" class="underline">Browse exercises</a> and set training maxes</li>
 				<li><a href="/equipment" class="underline">Set up your equipment</a> so weights round to what you can load</li>
 			</ul>
+			@startEmpty(p, h)
 		case h.Next.Complete:
 			<div class={ card + " mt-4" }>
 				<p>
@@ -37,6 +44,13 @@ templ Home(p Page, h HomePage) {
 				<h2 class="text-xl font-semibold">Next: { h.Next.Today.Name }</h2>
 				@PlanDay(p, h.Next.Today)
 				<div class="mt-3 flex flex-wrap items-center gap-2">
+					if h.Open == nil {
+						<form method="post" action="/sessions">
+							@CSRF(p)
+							<input type="hidden" name="kind" value="plan"/>
+							<button type="submit" class={ btn }>Start workout</button>
+						</form>
+					}
 					<form method="post" action="/plan/skip">
 						@CSRF(p)
 						<button type="submit" class={ btnSecondary }>Skip this day</button>
@@ -65,5 +79,15 @@ templ Error(p Page, status int, message, requestID string) {
 	<p class="mt-2">{ message }</p>
 	if requestID != "" {
 		<p class="mt-4 text-sm text-zinc-500">Request ID: <code>{ requestID }</code></p>
+	}
+}
+
+templ startEmpty(p Page, h HomePage) {
+	if h.Open == nil {
+		<form method="post" action="/sessions" class="mt-4">
+			@CSRF(p)
+			<input type="hidden" name="kind" value="adhoc"/>
+			<button type="submit" class={ btnSecondary }>Start an empty workout</button>
+		</form>
 	}
 }

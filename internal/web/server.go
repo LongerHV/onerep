@@ -16,6 +16,7 @@ import (
 	"github.com/LongerHV/onerep/internal/exercise"
 	"github.com/LongerHV/onerep/internal/plan"
 	"github.com/LongerHV/onerep/internal/store"
+	"github.com/LongerHV/onerep/internal/training"
 	"github.com/LongerHV/onerep/internal/web/views"
 )
 
@@ -29,6 +30,7 @@ type Server struct {
 	Exercises *exercise.Service
 	Account   *account.Service
 	Plans     *plan.Service
+	Training  *training.Service
 }
 
 // Routes returns the application's HTTP handler.
@@ -41,6 +43,8 @@ func (s *Server) Routes() http.Handler {
 
 	r.Get("/healthz", s.healthz)
 	r.Get("/schema/plan.json", planSchema)
+	r.Get("/sw.js", serviceWorker)
+	r.With(s.layout).Get("/offline", s.offline)
 	r.Handle("/static/*", staticHandler())
 	r.With(s.layout).Get("/auth/signed-out", func(w http.ResponseWriter, r *http.Request) {
 		render(w, r, http.StatusOK, views.SignedOut(page(r, "Signed out")))
@@ -64,6 +68,8 @@ func (s *Server) Routes() http.Handler {
 		r.Post("/auth/logout", s.logout)
 		s.exerciseRoutes(r)
 		s.planRoutes(r)
+		s.sessionRoutes(r)
+		s.historyRoutes(r)
 		s.equipmentRoutes(r)
 		r.Get("/settings", s.settings)
 		r.Post("/settings", s.saveSettings)
@@ -195,4 +201,15 @@ func (s *Server) limitBody(next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+// failJSON is fail for JSON endpoints (spec §16).
+func (s *Server) failJSON(w http.ResponseWriter, r *http.Request, err error) {
+	if errors.Is(err, store.ErrNotFound) {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
+		return
+	}
+	id := middleware.GetReqID(r.Context())
+	slog.ErrorContext(r.Context(), "request failed", "err", err, "request_id", id)
+	writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "something went wrong", "request_id": id})
 }

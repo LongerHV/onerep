@@ -113,3 +113,24 @@ func DayOptions(doc plan.Doc) []DayOption {
 	}
 	return out
 }
+
+func optWeight(kg *float64, unit string) string {
+	if kg == nil {
+		return ""
+	}
+	return Number(calc.FromKg(*kg, unit))
+}
+
+func optFloat(v *float64) string {
+	if v == nil {
+		return ""
+	}
+	return Number(*v)
+}
+
+func optInt(v *int) string {
+	if v == nil {
+		return ""
+	}
+	return strconv.Itoa(*v)
+}

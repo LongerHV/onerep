@@ -17,6 +17,7 @@ import (
 	"github.com/LongerHV/onerep/internal/plan"
 	"github.com/LongerHV/onerep/internal/store"
 	"github.com/LongerHV/onerep/internal/store/storetest"
+	"github.com/LongerHV/onerep/internal/training"
 )
 
 // newApp serves the full router with the given dev user ("" disables the bypass).
@@ -35,7 +36,8 @@ func newAppDB(t *testing.T, devUser string) (*httptest.Server, *http.Client, *st
 	}
 	s := &Server{DB: db, Sessions: &auth.Sessions{Store: db}, DevUser: devUser,
 		Exercises: &exercise.Service{Store: db}, Account: &account.Service{Store: db}}
-	s.Plans = &plan.Service{Store: db, Exercises: s.Exercises}
+	s.Plans = &plan.Service{Store: db, Exercises: s.Exercises, History: db}
+	s.Training = &training.Service{Store: db, Plans: s.Plans, Exercises: s.Exercises}
 	srv := httptest.NewServer(s.Routes())
 	t.Cleanup(srv.Close)
 	jar, _ := cookiejar.New(nil)

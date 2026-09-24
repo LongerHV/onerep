@@ -80,5 +80,23 @@ type PlanVersionPage struct {
 // HomePage is the start page.
 type HomePage struct {
 	Next   *plan.Next
+	Open   *store.Session // a workout in progress
 	Notice string
+}
+
+// HistoryDetail is one session in the history editor.
+type HistoryDetail struct {
+	Session      store.Session
+	Groups       []HistoryGroup // consecutive sets of one exercise
+	Exercises    map[string]store.Exercise
+	Catalog      []store.Exercise // for adding a set
+	NextGroupPos int
+	Error        string
+}
+
+// HistoryGroup is a run of sets of one exercise within a session.
+type HistoryGroup struct {
+	Slug     string
+	GroupPos int
+	Sets     []store.Set
 }

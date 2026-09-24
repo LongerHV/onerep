@@ -1,0 +1,18 @@
+package views
+
+import "github.com/LongerHV/onerep/internal/training"
+
+// SessionLive is the companion page. The screen itself is rendered by
+// /static/js/companion.js from the embedded bootstrap, so it works offline.
+templ SessionLive(p Page, boot training.Bootstrap) {
+	<div id="companion" aria-live="polite">
+		<p class="text-zinc-500">Loading your workout…</p>
+		<noscript>The workout screen needs JavaScript. You can still log sets in <a href={ templ.URL("/history/" + boot.Session.ID) } class="underline">history</a>.</noscript>
+	</div>
+	@templ.JSONScript("companion-boot", boot)
+}
+
+templ Offline(p Page) {
+	<h1 class={ h1 }>You are offline</h1>
+	<p class="mt-2">This page needs a connection. A workout you already opened keeps working offline and syncs when you are back online.</p>
+}
