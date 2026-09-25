@@ -112,10 +112,13 @@ tasks:
       - task: licenses:check
 
   e2e:
-    desc: Browser end-to-end check of offline workout logging (headless Chromium from the flake's nixpkgs)
+    desc: Browser end-to-end checks (offline workout logging, the plan form editor) in headless Chromium from the flake's nixpkgs
     deps: [build]
+    env:
+      ONEREP_BIN: bin/onerep
     cmds:
-      - CHROMIUM="$(nix build --no-link --print-out-paths --inputs-from . nixpkgs#chromium)/bin/chromium" ONEREP_BIN=bin/onerep node test/e2e/companion.mjs
+      - CHROMIUM="$(nix build --no-link --print-out-paths --inputs-from . nixpkgs#chromium)/bin/chromium" node test/e2e/companion.mjs
+      - CHROMIUM="$(nix build --no-link --print-out-paths --inputs-from . nixpkgs#chromium)/bin/chromium" node test/e2e/plan-editor.mjs
 
   image:
     desc: Build the container image locally without pushing

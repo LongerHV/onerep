@@ -27,7 +27,7 @@ The dev shell sets `CGO_ENABLED=0` and `ONEREP_ENV=dev`.
 | Lint | `task lint` |
 | Everything CI runs | `task ci` |
 | New migration after editing `internal/store/schema.sql` | `task migrate:diff NAME=<snake_case>` |
-| Browser end-to-end check (offline workout logging, headless Chromium) | `task e2e` |
+| Browser end-to-end checks (offline workout logging, the plan form editor; headless Chromium) | `task e2e` |
 | Container image (local, no push) | `task image` |
 
 ## Layout
@@ -41,14 +41,16 @@ internal/auth/         OIDC, cookie sessions, CSRF, API tokens, dev login bypass
 internal/account/      user preferences (unit, e1RM window)
 internal/calc/         pure training math: RTS/e1RM, rounding to equipment, load resolution
 internal/exercise/     catalog (+ embedded seed/exercises.json), equipment profiles, TM, alternatives
-internal/plan/         plan JSON Schema + validation, per-week expansion, load resolution, versions, cursor, diffs
+internal/plan/         plan JSON Schema + validation, per-week expansion, load resolution, versions, cursor, diffs,
+                         editor schema for the form (editor.go + editor.overlay.json)
 internal/training/     sessions, companion sync operations (idempotent, last write wins), bootstrap, history editing
 internal/stats/        e1RM series, rep maxes and PRs, weekly hard sets per muscle (queries in store/stats.go)
 internal/mcp/          MCP server (go-sdk): tools and prompts over the services, bearer-token auth, mounted at /mcp
 internal/web/          chi router, handlers, views/ (templ), static/ (embedded), jstest/ (node tests)
                          static/js/companion*.js + sw.js: offline workout screen and service worker
                          static/js/stats.js + chart-data.js: uPlot charts from /api/stats/*
-test/e2e/              browser end-to-end checks (Node + Chrome DevTools Protocol, no npm deps)
+                         static/js/plan-form*.js: plan editor form (vendored json-editor) and its pure logic
+test/e2e/              browser end-to-end checks (harness.mjs; companion.mjs, plan-editor.mjs), Node + Chrome DevTools Protocol, no npm deps
 testdata/calc_cases.json  shared Go/JS calc test vectors
 ```
 
@@ -66,7 +68,7 @@ testdata/calc_cases.json  shared Go/JS calc test vectors
 - **Pages vs fragments:** page templates render only their content, never `@Layout`. A handler that renders a page calls `page(r, title)`; the `layout` middleware (`internal/web/layout.go`) then wraps it in the full document for direct visits, reloads and history restores, and sends content + `<title>` to htmx navigation (`<body hx-boost>` swaps it into `#main`). Fragments for a specific `hx-target` use `fragmentPage(r)` and are never wrapped. Links and forms that must do a real page load (login, logout, non-HTML resources) get `hx-boost="false"`. Page scripts go in the layout `<head>` and set themselves up via `htmx.onLoad`, since swapped-in `<script type="module">` runs only once.
 - **Calc parity:** `internal/calc` (Go) and `internal/web/static/js/calc.js` implement the same math. Change both together and add a case to `testdata/calc_cases.json`; `task test` and `task test:js` both run it.
 - **Seed catalog:** edit `internal/exercise/seed/exercises.json`; slugs are permanent (plans and history refer to them). Removing an entry hides it, never deletes it. `TestSeedIsValid` checks the file.
-- **Plan documents:** `internal/plan/plan.schema.json` is the contract for the editor, the server and the AI. Change the schema, the Go types in `internal/plan/doc.go` and the semantic checks together; `internal/plan/testdata/*.golden.json` pins expansion (`go test ./internal/plan/ -update` rewrites it, so review the diff).
+- **Plan documents:** `internal/plan/plan.schema.json` is the contract for the editor, the server and the AI. Change the schema, the Go types in `internal/plan/doc.go` and the semantic checks together; `internal/plan/testdata/*.golden.json` pins expansion (`go test ./internal/plan/ -update` rewrites it, so review the diff). The editor's form uses a schema derived by `plan.EditorSchema` (UI hints live in `editor.overlay.json`, never in the contract); a new per-week field needs a kind in `perWeekKinds`, and `TestPerWeekFieldsAreAllRewritten` and `TestEditorOverlayPointsIntoContract` fail when the two drift.
 - **Companion mode:** the workout screen must keep working offline. Its logic lives in `companion-core.js` (pure, covered by `jstest/companion.test.mjs`); `companion.js` only renders and persists. Every change is an operation with a UUIDv7 `op_id` applied idempotently by `/api/sync`; never make the server depend on operation order across sessions. Run `task e2e` after touching the companion, the service worker or the sync endpoint.
 - **MCP tools are thin adapters too.** Every tool acts as the token's user, answers "not found" for anything else, uses kg in and out, and never changes logged sessions or sets or activates plans. Adding a tool means a test in `internal/mcp` that calls it through the go-sdk client, including with another user's token.
 - **Stats are queries, not stored values.** PRs, rep maxes, the e1RM series and muscle volume are computed from `sets` when shown, so history edits are reflected immediately. The companion's PR badge is advisory, from the bootstrap's `prs` table; history and the exercise page are authoritative.
