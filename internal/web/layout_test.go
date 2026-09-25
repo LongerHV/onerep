@@ -105,7 +105,7 @@ func TestLayoutBoostsNavigation(t *testing.T) {
 	full := read(t, mustGet(t, c, srv.URL+"/"))
 	for _, want := range []string{
 		`hx-boost="true"`, `hx-target="#main"`, `id="main"`, `name="htmx-config"`,
-		`action="/auth/logout" hx-boost="false"`, `src="/static/js/plan-editor.js"`,
+		`action="/auth/logout" hx-boost="false"`, `src="/static/js/plan-form.js"`,
 	} {
 		if !strings.Contains(full, want) {
 			t.Fatalf("layout misses %s", want)

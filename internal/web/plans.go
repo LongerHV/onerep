@@ -67,13 +67,26 @@ func (s *Server) planList(w http.ResponseWriter, r *http.Request) {
 	render(w, r, http.StatusOK, views.PlansPage(page(r, "Plans"), plans))
 }
 
-func (s *Server) editor(title, planID, doc string, problems plan.Problems) views.PlanEditor {
-	return views.PlanEditor{PlanID: planID, Title: title, Doc: doc, Schema: string(plan.Schema()), Errors: problems}
+// renderEditor renders the plan editor with the form's schema, built for the
+// user's catalog and unit and the exercises the document uses.
+func (s *Server) renderEditor(w http.ResponseWriter, r *http.Request, status int, title, planID, doc string, problems plan.Problems) {
+	u := user(r)
+	catalog, err := s.Exercises.Catalog(r.Context(), u.ID, "")
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	schema, err := plan.EditorSchema(plan.EditorOptions{Catalog: catalog, DocSlugs: plan.DocSlugs([]byte(doc)), Unit: u.Unit})
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	e := views.PlanEditor{PlanID: planID, Title: title, Doc: doc, Schema: string(schema), Errors: problems}
+	render(w, r, status, views.PlanEditorPage(page(r, title), e))
 }
 
 func (s *Server) planNew(w http.ResponseWriter, r *http.Request) {
-	e := s.editor("New plan", "", plan.Pretty(plan.StarterTemplate()), nil)
-	render(w, r, http.StatusOK, views.PlanEditorPage(page(r, "New plan"), e))
+	s.renderEditor(w, r, http.StatusOK, "New plan", "", plan.Pretty(plan.StarterTemplate()), nil)
 }
 
 func saveStatus(r *http.Request) string {
@@ -89,7 +102,7 @@ func (s *Server) planCreate(w http.ResponseWriter, r *http.Request) {
 	var ps plan.Problems
 	switch {
 	case errors.As(err, &ps):
-		render(w, r, http.StatusUnprocessableEntity, views.PlanEditorPage(page(r, "New plan"), s.editor("New plan", "", doc, ps)))
+		s.renderEditor(w, r, http.StatusUnprocessableEntity, "New plan", "", doc, ps)
 	case err != nil:
 		s.fail(w, r, err)
 	default:
@@ -148,8 +161,7 @@ func (s *Server) planEdit(w http.ResponseWriter, r *http.Request) {
 		s.renderError(w, r, http.StatusNotFound, "Version not found.")
 		return
 	}
-	e := s.editor("Edit "+p.Name, p.ID, plan.Pretty(src.Doc), nil)
-	render(w, r, http.StatusOK, views.PlanEditorPage(page(r, "Edit "+p.Name), e))
+	s.renderEditor(w, r, http.StatusOK, "Edit "+p.Name, p.ID, plan.Pretty(src.Doc), nil)
 }
 
 func (s *Server) planSave(w http.ResponseWriter, r *http.Request) {
@@ -164,8 +176,7 @@ func (s *Server) planSave(w http.ResponseWriter, r *http.Request) {
 			s.fail(w, r, perr)
 			return
 		}
-		e := s.editor("Edit "+p.Name, id, doc, ps)
-		render(w, r, http.StatusUnprocessableEntity, views.PlanEditorPage(page(r, "Edit "+p.Name), e))
+		s.renderEditor(w, r, http.StatusUnprocessableEntity, "Edit "+p.Name, id, doc, ps)
 	case err != nil:
 		s.fail(w, r, err)
 	default:

@@ -8,13 +8,14 @@ const SHELL_FILES = [
   "/offline",
   "/static/app.css",
   "/static/vendor/htmx.min.js",
-  "/static/vendor/jsoneditor/jse-theme-dark.css",
   "/static/vendor/uplot/uPlot.min.css",
   "/static/js/calc.js",
   "/static/js/chart-data.js",
   "/static/js/companion-core.js",
   "/static/js/companion.js",
-  "/static/js/plan-editor.js",
+  "/static/js/plan-form.js",
+  "/static/js/plan-form-core.js",
+  "/static/js/plan-form-theme.js",
   "/static/js/stats.js",
 ];
 

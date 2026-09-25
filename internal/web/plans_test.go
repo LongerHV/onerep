@@ -185,3 +185,30 @@ func TestOversizedPlanDocumentIsRefused(t *testing.T) {
 		t.Fatalf("saving a 1 MB document: %d", resp.StatusCode)
 	}
 }
+func TestPlanEditorUsesTheEditorSchema(t *testing.T) {
+	srv, c := newApp(t, "alice")
+	html := read(t, mustGet(t, c, srv.URL+"/plans/new"))
+	for _, want := range []string{`"format":"per-week"`, `"definitions"`, `data-view-switch`, `id="doc-form"`, `hx-sync="this:replace"`,
+		`Barbell Back Squat`} {
+		if !strings.Contains(html, want) {
+			t.Errorf("editor page lacks %q", want)
+		}
+	}
+	if strings.Contains(html, "jse-theme-dark") || strings.Contains(html, "plan-editor.js") {
+		t.Error("the old JSON editor is still loaded")
+	}
+}
+
+func TestPlanPreviewCarriesProblemsJSON(t *testing.T) {
+	srv, c := newApp(t, "alice")
+	page := read(t, mustGet(t, c, srv.URL+"/plans/new"))
+	csrf := csrfInput.FindStringSubmatch(page)[1]
+	resp, err := c.PostForm(srv.URL+"/plans/preview", url.Values{"doc": {`{"name":"x","weeks":0,"days":[]}`}, "csrf_token": {csrf}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	html := read(t, resp)
+	if !strings.Contains(html, `id="plan-problems"`) || !strings.Contains(html, `data-pointer="/weeks"`) {
+		t.Fatalf("preview = %s", html)
+	}
+}

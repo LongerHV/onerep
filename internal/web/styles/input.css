@@ -1,4 +1,5 @@
-/* Only templ views are scanned for class names, so the output is deterministic. */
+/* Only templ views and the plan form theme are scanned for class names, so the output is deterministic. */
 @import "tailwindcss" source(none);
 
 @source "../views";
+@source "../static/js/plan-form-theme.js";

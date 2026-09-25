@@ -111,8 +111,7 @@ templ PlanDetailPage(p Page, d PlanPage) {
 templ PlanEditorPage(p Page, e PlanEditor) {
 	<h1 class={ h1 }>{ e.Title }</h1>
 	<p class="mt-1 text-sm text-zinc-500">
-		The plan is a JSON document. <a href="/schema/plan.json" class="underline" hx-boost="false">Schema</a>:
-		values marked "per week" can be one value or an array with one entry per week.
+		Edit the plan in the form, or switch to its JSON. <a href="/schema/plan.json" class="underline" hx-boost="false">Schema</a>.
 	</p>
 	<form
 		method="post"
@@ -125,6 +124,13 @@ templ PlanEditorPage(p Page, e PlanEditor) {
 	>
 		@CSRF(p)
 		<div>
+			<div class="mb-2 flex flex-wrap items-center gap-2">
+				<div data-view-switch hidden class="inline-flex overflow-hidden rounded border border-zinc-300 text-sm dark:border-zinc-700">
+					<button type="button" data-view="form" class="px-3 py-1.5 aria-pressed:bg-zinc-900 aria-pressed:text-white dark:aria-pressed:bg-zinc-100 dark:aria-pressed:text-zinc-900">Form</button>
+					<button type="button" data-view="json" class="px-3 py-1.5 aria-pressed:bg-zinc-900 aria-pressed:text-white dark:aria-pressed:bg-zinc-100 dark:aria-pressed:text-zinc-900">JSON</button>
+				</div>
+				<p data-view-note hidden class="text-sm text-amber-700 dark:text-amber-400"></p>
+			</div>
 			<textarea
 				id="doc"
 				name="doc"
@@ -135,8 +141,9 @@ templ PlanEditorPage(p Page, e PlanEditor) {
 				hx-post="/plans/preview"
 				hx-trigger="load, keyup changed delay:500ms, doc-changed delay:500ms"
 				hx-target="#plan-preview"
+				hx-sync="this:replace"
 			>{ e.Doc }</textarea>
-			<div id="doc-editor" class="h-[70vh]" hidden></div>
+			<div id="doc-form" hidden></div>
 			<div class="mt-2 flex gap-2">
 				<button type="submit" name="action" value="draft" class={ btnSecondary }>Save as draft</button>
 				<button type="submit" name="action" value="activate" class={ btn }>Save and activate</button>
@@ -161,7 +168,7 @@ templ PlanProblems(ps plan.Problems) {
 					}
 				>
 					if pr.Pointer != "" {
-						<code>{ pr.Pointer }</code>:
+						<button type="button" data-pointer={ pr.Pointer } class="font-mono underline">{ pr.Pointer }</button>:
 					}
 					{ pr.Message }
 				</li>
@@ -172,6 +179,7 @@ templ PlanProblems(ps plan.Problems) {
 
 // PlanPreview is the editor's live preview: problems, then every week.
 templ PlanPreview(p Page, ps plan.Problems, weeks [][]plan.ExpandedDay) {
+	@templ.JSONScript("plan-problems", ps)
 	@PlanProblems(ps)
 	if !ps.HasErrors() {
 		@PlanWeeks(p, weeks)
