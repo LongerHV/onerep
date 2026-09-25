@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/LongerHV/onerep/internal/plan"
 	"github.com/LongerHV/onerep/internal/store"
 )
 
@@ -156,5 +157,19 @@ func TestGuideAsksForTheUnit(t *testing.T) {
 	}
 	if !strings.Contains(instructions, `"unit"`) || !strings.Contains(planFormat, `Always set "unit"`) {
 		t.Error("the instructions and the guide must tell the AI to set the plan's unit")
+	}
+}
+
+// The AI guide's example also fits the form's schema, so the form can open
+// anything the AI is taught to write.
+func TestGuideExampleFitsTheEditorSchema(t *testing.T) {
+	_, example, _ := strings.Cut(planFormat, "## Example\n\n```json\n")
+	example, _, _ = strings.Cut(example, "```")
+	raw, err := plan.EditorSchema(plan.EditorOptions{DocSlugs: plan.DocSlugs([]byte(example)), Unit: "kg"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := plan.CheckAgainst(raw, []byte(example)); err != nil {
+		t.Fatal(err)
 	}
 }
