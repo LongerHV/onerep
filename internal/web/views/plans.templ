@@ -120,10 +120,10 @@ templ PlanEditorPage(p Page, e PlanEditor) {
 		} else {
 			action={ templ.URL("/plans/" + e.PlanID) }
 		}
-		class="mt-4 grid gap-4 lg:grid-cols-2"
+		class="mt-4 grid gap-4 lg:relative lg:left-1/2 lg:w-[min(72rem,calc(100vw-2rem))] lg:-translate-x-1/2 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]"
 	>
 		@CSRF(p)
-		<div>
+		<div class="min-w-0">
 			<div class="mb-2 flex flex-wrap items-center gap-2">
 				<div data-view-switch hidden class="inline-flex overflow-hidden rounded border border-zinc-300 text-sm dark:border-zinc-700">
 					<button type="button" data-view="form" class="px-3 py-1.5 aria-pressed:bg-zinc-900 aria-pressed:text-white dark:aria-pressed:bg-zinc-100 dark:aria-pressed:text-zinc-900">Form</button>
@@ -149,7 +149,7 @@ templ PlanEditorPage(p Page, e PlanEditor) {
 				<button type="submit" name="action" value="activate" class={ btn }>Save and activate</button>
 			</div>
 		</div>
-		<div id="plan-preview" aria-live="polite">
+		<div id="plan-preview" class="min-w-0" aria-live="polite">
 			@PlanProblems(e.Errors)
 		</div>
 	</form>
@@ -168,7 +168,7 @@ templ PlanProblems(ps plan.Problems) {
 					}
 				>
 					if pr.Pointer != "" {
-						<button type="button" data-pointer={ pr.Pointer } class="font-mono underline">{ pr.Pointer }</button>:
+						<button type="button" data-pointer={ pr.Pointer } class="break-all text-left font-mono underline">{ pr.Pointer }</button>:
 					}
 					{ pr.Message }
 				</li>

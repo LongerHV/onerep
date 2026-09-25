@@ -99,6 +99,9 @@ func EditorSchema(o EditorOptions) ([]byte, error) {
 	}
 	props := load["properties"].(map[string]any)
 	branch := func(title, key string) map[string]any {
+		if p, ok := props[key].(map[string]any); ok {
+			p["title"] = title
+		}
 		return map[string]any{"title": title, "type": "object", "additionalProperties": false,
 			"required": []any{key}, "properties": map[string]any{key: props[key]}}
 	}
@@ -107,6 +110,16 @@ func EditorSchema(o EditorOptions) ([]byte, error) {
 		map[string]any{"title": "None", "type": "object", "additionalProperties": false, "properties": map[string]any{}},
 		branch("Weight", "weight"), branch("% of TM", "pct_tm"), branch("RPE", "rpe"), branch("Drop %", "drop_pct"),
 	}}
+
+	// Object descriptions would repeat on every day, group, exercise and set
+	// line; field descriptions stay (shown as tooltips).
+	for _, ptr := range []string{"", "/$defs/day", "/$defs/group", "/$defs/slot", "/$defs/setLine", "/$defs/load"} {
+		node, err := lookup(s, ptr)
+		if err != nil {
+			return nil, err
+		}
+		delete(node, "description")
+	}
 
 	var overlay map[string]map[string]any
 	if err := json.Unmarshal(editorOverlay, &overlay); err != nil {

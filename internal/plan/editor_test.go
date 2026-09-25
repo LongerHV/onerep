@@ -227,3 +227,31 @@ func TestEditorSchemaWritesPropertiesInContractOrder(t *testing.T) {
 		}
 	}
 }
+
+// Object descriptions would repeat on every day, group, exercise and set line
+// of the form; field descriptions stay (the form shows them as tooltips).
+func TestEditorSchemaDropsObjectDescriptions(t *testing.T) {
+	s := editorSchema(t, EditorOptions{Catalog: editorCatalog, Unit: "kg"})
+	for _, ptr := range []string{"", "/definitions/group", "/definitions/setLine", "/definitions/load"} {
+		if node, _ := lookup(s, ptr); node["description"] != nil {
+			t.Errorf("%q keeps its description", ptr)
+		}
+	}
+	if count, _ := lookup(s, "/definitions/setLine/properties/count"); count["description"] == nil {
+		t.Error("field descriptions must stay")
+	}
+}
+
+// A load branch's field is labelled like its branch, not with the raw key.
+func TestEditorSchemaTitlesLoadFields(t *testing.T) {
+	s := editorSchema(t, EditorOptions{Catalog: editorCatalog, Unit: "kg"})
+	load, _ := lookup(s, "/definitions/load")
+	for _, b := range load["oneOf"].([]any)[1:] {
+		branch := b.(map[string]any)
+		for key, p := range branch["properties"].(map[string]any) {
+			if p.(map[string]any)["title"] != branch["title"] {
+				t.Errorf("load field %s title = %v, want %v", key, p.(map[string]any)["title"], branch["title"])
+			}
+		}
+	}
+}
