@@ -255,3 +255,13 @@ func TestEditorSchemaTitlesLoadFields(t *testing.T) {
 		}
 	}
 }
+
+// Alternatives are an ordered list the form edits with its own field (a
+// native multi-select re-sorts them and drops picks on a plain click).
+func TestEditorSchemaAlternativesAreAList(t *testing.T) {
+	s := editorSchema(t, EditorOptions{Catalog: editorCatalog, Unit: "kg"})
+	alts, _ := lookup(s, "/definitions/slot/properties/alternatives")
+	if alts["format"] != "slug-list" {
+		t.Fatalf("alternatives = %v", alts)
+	}
+}

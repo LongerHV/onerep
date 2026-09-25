@@ -59,12 +59,21 @@ export function perWeekValue(state) {
   return vals.map((v) => (v === undefined ? null : v));
 }
 
-// resize fits a varying field to the plan's weeks: new weeks copy the last one.
+// validWeeks returns weeks when it is a usable plan length (1-52), else null:
+// while Weeks is empty or mistyped, per-week fields keep their values.
+export function validWeeks(weeks) {
+  return Number.isInteger(weeks) && weeks >= 1 && weeks <= 52 ? weeks : null;
+}
+
+// resize fits a varying field to the plan's weeks: new weeks copy the last
+// one, and trimmed weeks are kept (hidden) so growing the plan again brings
+// them back.
 export function resize(state, weeks) {
   if (!state.vary) return state;
-  const values = state.values.slice(0, weeks);
+  const all = state.values.concat(state.hidden || []);
+  const values = all.slice(0, weeks);
   while (values.length < weeks) values.push(values.length ? values[values.length - 1] : undefined);
-  return { vary: true, values };
+  return { vary: true, values, hidden: all.slice(weeks) };
 }
 
 // weekSetFrom reads only_weeks. Weeks beyond the plan are kept, so shrinking
@@ -101,10 +110,25 @@ function canonical(v) {
   return Object.fromEntries(Object.keys(v).sort().map((k) => [k, canonical(v[k])]));
 }
 
+// PER_WEEK_KEYS are the keys whose values may be per-week arrays.
+const PER_WEEK_KEYS = new Set(["count", "reps", "duration_s", "rpe", "rest_s", "weight", "pct_tm", "drop_pct"]);
+
+// collapseUniform turns per-week arrays of exactly `weeks` equal entries into
+// that one value, which is how the form stores them.
+function collapseUniform(v, weeks) {
+  if (Array.isArray(v)) return v.map((x) => collapseUniform(x, weeks));
+  if (!isPlainObject(v)) return v;
+  return Object.fromEntries(Object.entries(v).map(([k, x]) => {
+    if (PER_WEEK_KEYS.has(k) && Array.isArray(x) && x.length === weeks && x[0] !== null && x.every((y) => y === x[0])) return [k, x[0]];
+    return [k, collapseUniform(x, weeks)];
+  }));
+}
+
 // sameDoc reports whether two documents mean the same plan: key order is
-// ignored, cleaned values are ignored, and a missing unit is the user's.
+// ignored, cleaned values are ignored, a missing unit is the user's, and a
+// uniform per-week array is its one value.
 export function sameDoc(a, b, unit) {
-  const norm = (d) => canonical(clean(isPlainObject(d) && !d.unit ? { ...d, unit } : d));
+  const norm = (d) => canonical(collapseUniform(clean(isPlainObject(d) && !d.unit ? { ...d, unit } : d), isPlainObject(d) ? d.weeks : undefined));
   return JSON.stringify(norm(a)) === JSON.stringify(norm(b));
 }
 
@@ -114,22 +138,23 @@ export function pointerToPath(pointer) {
 }
 
 // nearestPath walks up from path to the closest path that has an editor. A
-// trailing week index on a per-week value becomes week (1-based).
-export function nearestPath(path, has) {
+// trailing index directly below a per-week field becomes week (1-based).
+export function nearestPath(path, has, isPerWeek = () => false) {
   const parts = path.split(".");
   let week = null;
   while (parts.length > 1 && !has(parts.join("."))) {
     const last = parts.pop();
-    week = parts.length > 0 && /^\d+$/.test(last) && week === null && has(parts.join(".")) ? Number(last) + 1 : null;
+    const parent = parts.join(".");
+    week = /^\d+$/.test(last) && week === null && has(parent) && isPerWeek(parent) ? Number(last) + 1 : null;
   }
   return { path: parts.join("."), week };
 }
 
 // problemsToErrors turns the server's problems into json-editor errors.
 // Warnings are marked with a "Warning: " prefix, which the theme styles amber.
-export function problemsToErrors(problems, has) {
+export function problemsToErrors(problems, has, isPerWeek) {
   return (problems || []).map((p) => {
-    const { path, week } = nearestPath(pointerToPath(p.pointer), has);
+    const { path, week } = nearestPath(pointerToPath(p.pointer), has, isPerWeek);
     const text = (week ? `W${week}: ` : "") + p.message;
     return { path, property: "onerep", message: p.warning ? `Warning: ${text}` : text };
   });
@@ -173,4 +198,17 @@ export function markRequired(schema) {
   };
   walk(copy);
   return copy;
+}
+
+// An ordered list of exercises (alternatives): additions go at the end.
+export function listAdd(list, slug) {
+  return slug && !list.includes(slug) ? [...list, slug] : list.slice();
+}
+
+export function listRemove(list, index) {
+  return list.filter((_, i) => i !== index);
+}
+
+export function listValue(list) {
+  return list.length ? list.slice() : undefined;
 }

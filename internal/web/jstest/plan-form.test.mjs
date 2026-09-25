@@ -37,8 +37,8 @@ test("per-week value collapses equal weeks and keeps count skips", () => {
 });
 
 test("per-week resize copies the last week and trims", () => {
-  assert.deepEqual(f.resize({ vary: true, values: [3, 4] }, 4), { vary: true, values: [3, 4, 4, 4] });
-  assert.deepEqual(f.resize({ vary: true, values: [3, 4, 5] }, 2), { vary: true, values: [3, 4] });
+  assert.deepEqual(f.resize({ vary: true, values: [3, 4] }, 4).values, [3, 4, 4, 4]);
+  assert.deepEqual(f.resize({ vary: true, values: [3, 4, 5] }, 2).values, [3, 4]);
   assert.deepEqual(f.resize({ vary: false, values: [5] }, 6), { vary: false, values: [5] });
 });
 
@@ -72,9 +72,10 @@ test("pointer to path, walking up to an existing editor", () => {
   assert.equal(f.pointerToPath("/a~1b/c~0d"), "root.a/b.c~d");
   const editors = new Set(["root", "root.days.0.groups.0.exercises.0.sets.0.count", "root.days.0.groups.0.exercises.0.sets.0.load"]);
   const has = (p) => editors.has(p);
-  assert.deepEqual(f.nearestPath("root.days.0.groups.0.exercises.0.sets.0.count.2", has), { path: "root.days.0.groups.0.exercises.0.sets.0.count", week: 3 });
-  assert.deepEqual(f.nearestPath("root.days.0.groups.0.exercises.0.sets.0.load.pct_tm", has), { path: "root.days.0.groups.0.exercises.0.sets.0.load", week: null });
-  assert.deepEqual(f.nearestPath("root.nowhere.9", has), { path: "root", week: null });
+  const perWeek = (p) => p.endsWith(".count");
+  assert.deepEqual(f.nearestPath("root.days.0.groups.0.exercises.0.sets.0.count.2", has, perWeek), { path: "root.days.0.groups.0.exercises.0.sets.0.count", week: 3 });
+  assert.deepEqual(f.nearestPath("root.days.0.groups.0.exercises.0.sets.0.load.pct_tm", has, perWeek), { path: "root.days.0.groups.0.exercises.0.sets.0.load", week: null });
+  assert.deepEqual(f.nearestPath("root.nowhere.9", has, perWeek), { path: "root", week: null });
 });
 
 test("problems become json-editor errors", () => {
@@ -83,7 +84,7 @@ test("problems become json-editor errors", () => {
     { pointer: "/weeks", message: "must be at least 1" },
     { pointer: "/days/0/groups/0/rest_s/1", message: "too long", warning: true },
     { pointer: "", message: "no days in week 3" },
-  ], has);
+  ], has, (p) => p.endsWith("rest_s"));
   assert.deepEqual(errs, [
     { path: "root.weeks", property: "onerep", message: "must be at least 1" },
     { path: "root.days.0.groups.0.rest_s", property: "onerep", message: "Warning: W2: too long" },
@@ -124,4 +125,43 @@ test("markRequired keeps every optional field in the form", () => {
   assert.equal(out.definitions.x.properties.c.required, true);
   assert.equal(out.definitions.l.oneOf[0].properties.d.required, true);
   assert.equal(schema.properties.a.required, undefined, "the input is not modified");
+});
+
+test("only a valid weeks value resizes per-week fields", () => {
+  assert.equal(f.validWeeks(4), 4);
+  for (const bad of [undefined, null, "", 0, 53, 2.5, "4"]) assert.equal(f.validWeeks(bad), null, String(bad));
+});
+
+test("shrinking then growing weeks restores the trimmed weeks", () => {
+  const short = f.resize({ vary: true, values: [3, 3, 4, 2] }, 2);
+  assert.deepEqual(short.values, [3, 3]);
+  assert.deepEqual(f.perWeekValue(short), 3);
+  assert.deepEqual(f.resize(short, 4).values, [3, 3, 4, 2]);
+  assert.deepEqual(f.resize(short, 5).values, [3, 3, 4, 2, 2]);
+});
+
+test("week labels only on per-week fields", () => {
+  const editors = new Set(["root", "root.days.0.only_weeks", "root.days.0.groups.0.exercises.0.alternatives", "root.days.0.groups.0.rest_s"]);
+  const has = (p) => editors.has(p);
+  const perWeek = (p) => p.endsWith("rest_s");
+  assert.deepEqual(f.nearestPath("root.days.0.only_weeks.1", has, perWeek), { path: "root.days.0.only_weeks", week: null });
+  assert.deepEqual(f.nearestPath("root.days.0.groups.0.exercises.0.alternatives.1", has, perWeek), { path: "root.days.0.groups.0.exercises.0.alternatives", week: null });
+  assert.deepEqual(f.nearestPath("root.days.0.groups.0.rest_s.1", has, perWeek), { path: "root.days.0.groups.0.rest_s", week: 2 });
+  assert.equal(f.problemsToErrors([{ pointer: "/days/0/only_weeks/1", message: "week 5 is past the plan" }], has, perWeek)[0].message,
+    "week 5 is past the plan");
+});
+
+test("a uniform per-week array the length of the plan is the same plan as one value", () => {
+  const plan = (restS) => ({ name: "P", unit: "kg", weeks: 4, days: [{ name: "D", groups: [{ rest_s: restS, exercises: [] }] }] });
+  assert.ok(f.sameDoc(plan([120, 120, 120, 120]), plan(120), "kg"));
+  assert.ok(!f.sameDoc(plan([120, 120]), plan(120), "kg"), "a wrong-length array is not silently fixed");
+  assert.ok(!f.sameDoc(plan([120, 90, 120, 120]), plan(120), "kg"));
+});
+
+test("an alternatives list keeps its order", () => {
+  assert.deepEqual(f.listAdd(["b", "a"], "c"), ["b", "a", "c"]);
+  assert.deepEqual(f.listAdd(["b", "a"], "a"), ["b", "a"], "no duplicates");
+  assert.deepEqual(f.listRemove(["b", "a", "c"], 1), ["b", "c"]);
+  assert.equal(f.listValue([]), undefined);
+  assert.deepEqual(f.listValue(["b"]), ["b"]);
 });

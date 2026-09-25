@@ -12,7 +12,7 @@
   "/$defs/group/properties/rest_s": {"title": "Rest (s)"},
   "/$defs/group/properties/exercises": {"title": "Exercises"},
   "/$defs/slot": {"title": "Exercise", "headerTemplate": "@slot", "options": {"disable_collapse": false}},
-  "/$defs/slot/properties/alternatives": {"title": "Alternatives"},
+  "/$defs/slot/properties/alternatives": {"title": "Alternatives", "format": "slug-list"},
   "/$defs/slot/properties/notes": {"title": "Notes", "format": "textarea"},
   "/$defs/slot/properties/sets": {"title": "Sets"},
   "/$defs/setLine": {"title": "Set line", "format": "grid", "headerTemplate": "@set"},

@@ -43,6 +43,7 @@ async function start(textarea) {
   const schema = core.markRequired(JSON.parse(schemaEl.textContent));
   const unit = schema.properties?.unit?.default || "kg";
   setNames(core.slugNames(schema));
+  holder.replaceChildren(); // Back restores a copy of an earlier form; start clean
   const editor = new JSONEditor(holder, {
     schema, theme: "onerep", template: "onerep", iconlib: null, show_errors: "never",
     disable_edit_json: true, disable_properties: true, disable_collapse: true, disable_array_delete_all_rows: true,
@@ -54,7 +55,14 @@ async function start(textarea) {
   let view = "json";
   let loading = false;
   const has = (p) => !!editor.getEditor(p);
+  const isPerWeek = (p) => !!editor.getEditor(p)?.options?.perWeek;
 
+  // flush writes the form into the textarea now. json-editor reports changes
+  // a frame late, so a Save tapped right after an edit (or the JSON switch)
+  // would otherwise see the previous document.
+  const flush = () => {
+    if (view === "form") textarea.value = JSON.stringify(core.clean(editor.getValue()), null, 2);
+  };
   const writeBack = () => {
     if (loading || view !== "form") return;
     textarea.value = JSON.stringify(core.clean(editor.getValue()), null, 2);
@@ -82,7 +90,7 @@ async function start(textarea) {
   const markProblems = () => {
     if (view !== "form") return;
     const el = document.getElementById("plan-problems");
-    editor.showValidationErrors(core.problemsToErrors(el ? JSON.parse(el.textContent) : [], has));
+    editor.showValidationErrors(core.problemsToErrors(el ? JSON.parse(el.textContent) : [], has, isPerWeek));
   };
 
   // The ready pass shows json-editor's own validation once even with
@@ -92,22 +100,33 @@ async function start(textarea) {
   switcher.addEventListener("click", (e) => {
     const v = e.target.closest("[data-view]")?.dataset.view;
     if (!v || v === view) return;
+    if (v === "json") flush();
     const reason = v === "form" ? loadForm() : null;
     if (reason) return show("json", reason);
     storeView(v);
     show(v);
     if (v === "form") markProblems();
   });
+  const form = textarea.form;
+  const onSubmit = () => flush();
+  // Enter in a form field would submit (save) the plan; only buttons and the
+  // notes textarea keep their Enter.
+  const onKey = (e) => {
+    if (e.key === "Enter" && !(e.target instanceof HTMLTextAreaElement) && !(e.target instanceof HTMLButtonElement)) e.preventDefault();
+  };
+  form?.addEventListener("submit", onSubmit, true);
+  holder.addEventListener("keydown", onKey);
   const onSwap = () => markProblems();
   const onFocus = (e) => {
     const b = e.target.closest("[data-pointer]");
-    if (b && view === "form") focusPath(editor, core.nearestPath(core.pointerToPath(b.dataset.pointer), has).path);
+    if (b && view === "form") focusPath(editor, core.nearestPath(core.pointerToPath(b.dataset.pointer), has, isPerWeek).path);
   };
   preview?.addEventListener("htmx:afterSwap", onSwap);
   preview?.addEventListener("click", onFocus);
   textarea.addEventListener("htmx:beforeCleanupElement", () => {
     preview?.removeEventListener("htmx:afterSwap", onSwap);
     preview?.removeEventListener("click", onFocus);
+    form?.removeEventListener("submit", onSubmit, true);
     editor.destroy();
   }, { once: true });
 

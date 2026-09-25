@@ -37,8 +37,17 @@ export function register(JSONEditor) {
   if (registered) return;
   registered = true;
 
+  // json-editor "sanitises" strings by parsing them with innerHTML, which runs
+  // event handlers such as <img onerror>; plan strings come from users and the
+  // AI. Values go into inputs as .value and headers as text, so strings are
+  // left as they are, and text is extracted with an inert parser.
+  const inert = (t) => new DOMParser().parseFromString(String(t ?? ""), "text/html").body.textContent || "";
+  JSONEditor.AbstractEditor.prototype.purify = (v) => v;
+  JSONEditor.AbstractEditor.prototype.cleanText = inert;
+
   class OnerepTheme extends JSONEditor.AbstractTheme {
     constructor(jsoneditor) { super(jsoneditor, { disable_theme_rules: true }); }
+    cleanText(t) { return inert(t); }
     getFormInputLabel(text, req) { const l = super.getFormInputLabel(text, req); l.className = cls.label; return l; }
     getFormInputField(type) { return add(super.getFormInputField(type), cls.input); }
     getSelectInput(options, multiple) { return add(super.getSelectInput(options, multiple), multiple ? cls.input + " h-28" : cls.input); }
@@ -93,6 +102,10 @@ export function register(JSONEditor) {
       const t = add(document.createElement("div"), cls.tab);
       t.id = tabId;
       t.setAttribute("role", "tab");
+      t.tabIndex = 0; // reachable from the keyboard; Enter or Space opens it
+      t.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); t.click(); }
+      });
       t.appendChild(span);
       return t;
     }
@@ -113,9 +126,16 @@ export function register(JSONEditor) {
 
   // Shared by the per-week and week-set fields.
   class WeeksAware extends JSONEditor.AbstractEditor {
+    // weeks is the plan's current length, or its last valid one while Weeks is
+    // empty or mistyped.
     weeks() {
-      const w = this.jsoneditor.getEditor("root.weeks")?.getValue();
-      return Number.isInteger(w) && w >= 1 && w <= 52 ? w : 1;
+      const w = core.validWeeks(this.jsoneditor.getEditor("root.weeks")?.getValue());
+      if (w !== null) this.lastWeeks = w;
+      return this.lastWeeks || 1;
+    }
+    // weeksValid reports whether Weeks holds a usable value right now.
+    weeksValid() {
+      return core.validWeeks(this.jsoneditor.getEditor("root.weeks")?.getValue()) !== null;
     }
     watchWeeks() {
       this.onWeeks = () => this.weeksChanged();
@@ -170,7 +190,7 @@ export function register(JSONEditor) {
       this.render();
     }
     weeksChanged() {
-      if (!this.state.vary) return;
+      if (!this.state.vary || !this.weeksValid()) return; // keep values while Weeks is being retyped
       this.state = core.resize(this.state, this.weeks());
       this.render();
       this.commit(core.perWeekValue(this.state));
@@ -265,10 +285,70 @@ export function register(JSONEditor) {
     }
   }
 
+  // SlugListEditor edits alternatives as an ordered list: a select adds to the
+  // end, each entry has a Remove button. (A native multi-select sorts them
+  // and drops the other picks on a plain click.)
+  class SlugListEditor extends WeeksAware {
+    build() {
+      const items = this.jsoneditor.expandRefs ? this.jsoneditor.expandRefs(this.schema.items || {}) : (this.schema.items || {});
+      const slugs = items.enum || [];
+      const titles = items.options?.enum_titles || slugs;
+      this.names = Object.fromEntries(slugs.map((s, i) => [s, titles[i] || s]));
+      this.list = [];
+      this.control = document.createElement("div");
+      this.control.dataset.slugList = this.path;
+      this.control.append(this.theme.getFormInputLabel(this.getTitle(), false));
+      this.items = add(document.createElement("ul"), "space-y-1 text-sm");
+      this.picker = add(document.createElement("select"), cls.input);
+      this.picker.setAttribute("aria-label", `Add to ${this.getTitle().toLowerCase()}`);
+      this.picker.append(new Option("Add an alternative…", ""), ...slugs.map((s) => new Option(this.names[s], s)));
+      this.picker.addEventListener("change", () => {
+        this.list = core.listAdd(this.list, this.picker.value);
+        this.picker.value = "";
+        this.render();
+        this.commit(core.listValue(this.list));
+      });
+      this.errmsg = add(document.createElement("p"), cls.error);
+      this.errmsg.hidden = true;
+      this.control.append(this.items, this.picker, this.errmsg);
+      this.container.appendChild(this.control);
+      this.render();
+    }
+    setValue(value, initial) {
+      this.list = Array.isArray(value) ? value.filter((s) => typeof s === "string") : [];
+      this.value = core.listValue(this.list);
+      if (this.items) this.render();
+      if (!initial) this.is_dirty = true;
+      this.onChange(false);
+    }
+    getValue() { return this.value; }
+    render() {
+      this.items.replaceChildren(...this.list.map((s, i) => {
+        const li = add(document.createElement("li"), "flex items-center justify-between gap-2");
+        const name = document.createElement("span");
+        name.textContent = this.names[s] || s;
+        const remove = add(document.createElement("button"), cls.danger);
+        remove.type = "button";
+        remove.textContent = "Remove";
+        remove.setAttribute("aria-label", `Remove ${this.names[s] || s}`);
+        remove.addEventListener("click", () => {
+          this.list = core.listRemove(this.list, i);
+          this.render();
+          this.commit(core.listValue(this.list));
+        });
+        li.append(name, remove);
+        return li;
+      }));
+    }
+    getNumColumns() { return 12; }
+  }
+
   JSONEditor.defaults.themes.onerep = OnerepTheme;
+  JSONEditor.defaults.editors.sluglist = SlugListEditor;
   JSONEditor.defaults.editors.perweek = PerWeekEditor;
   JSONEditor.defaults.editors.weekset = WeekSetEditor;
   JSONEditor.defaults.resolvers.unshift((schema) =>
-    schema.format === "per-week" ? "perweek" : schema.format === "week-set" ? "weekset" : undefined);
+    schema.format === "per-week" ? "perweek" : schema.format === "week-set" ? "weekset"
+      : schema.format === "slug-list" ? "sluglist" : undefined);
   JSONEditor.defaults.templates.onerep = () => ({ compile: (t) => (vars) => core.headerText(t, vars, names) });
 }
