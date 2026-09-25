@@ -177,3 +177,53 @@ func TestDocSlugs(t *testing.T) {
 		t.Fatal("unparsable documents have no slugs")
 	}
 }
+
+// The form writes keys in the contract's order (json-editor orders by
+// propertyOrder, otherwise alphabetically), so weeks is set before days and
+// versions diff cleanly.
+func TestEditorSchemaKeepsPropertyOrder(t *testing.T) {
+	s := editorSchema(t, EditorOptions{Catalog: editorCatalog, Unit: "kg"})
+	for ptr, want := range map[string][]string{
+		"/properties":                     {"name", "unit", "weeks", "days"},
+		"/definitions/slot/properties":    {"slug", "alternatives", "notes", "sets"},
+		"/definitions/setLine/properties": {"kind", "count", "reps", "duration_s", "rpe", "load"},
+	} {
+		props, err := lookup(s, ptr)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for i, key := range want {
+			if order := props[key].(map[string]any)["propertyOrder"]; order != float64(i+1) {
+				t.Errorf("%s/%s propertyOrder = %v, want %d", ptr, key, order, i+1)
+			}
+		}
+	}
+	for _, ptr := range []string{"/definitions/setLine/properties/kind", "/properties/unit"} {
+		if node, _ := lookup(s, ptr); node["type"] != "string" {
+			t.Errorf("%s needs a type, or json-editor shows a type switcher", ptr)
+		}
+	}
+}
+
+// json-editor builds values (and sets them) in the order of each properties
+// object's keys, so the editor schema must be written in the contract's order.
+func TestEditorSchemaWritesPropertiesInContractOrder(t *testing.T) {
+	raw, err := EditorSchema(EditorOptions{Catalog: editorCatalog, Unit: "kg"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := propertyOrders(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, _ := propertyOrders(schemaJSON)
+	for ptr, keys := range want {
+		if strings.HasPrefix(ptr, "/$defs/load/") {
+			continue // rebuilt as a oneOf of single-key branches
+		}
+		ed := strings.Replace(ptr, "/$defs/", "/definitions/", 1)
+		if !slices.Equal(got[ed], keys) {
+			t.Errorf("%s keys = %v, want %v", ed, got[ed], keys)
+		}
+	}
+}

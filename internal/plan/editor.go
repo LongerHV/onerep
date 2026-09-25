@@ -69,6 +69,24 @@ func EditorSchema(o EditorOptions) ([]byte, error) {
 		}
 	}
 
+	// json-editor orders fields (and the keys it writes) by propertyOrder,
+	// otherwise alphabetically: keep the contract's order.
+	orders, err := propertyOrders(schemaJSON)
+	if err != nil {
+		return nil, err
+	}
+	for ptr, keys := range orders {
+		props, err := lookup(s, ptr)
+		if err != nil {
+			return nil, err
+		}
+		for i, k := range keys {
+			if p, ok := props[k].(map[string]any); ok {
+				p["propertyOrder"] = i + 1
+			}
+		}
+	}
+
 	setLine, err := lookup(s, "/$defs/setLine")
 	if err != nil {
 		return nil, err
@@ -136,7 +154,15 @@ func EditorSchema(o EditorOptions) ([]byte, error) {
 	s["definitions"] = s["$defs"]
 	delete(s, "$defs")
 	renameRefs(s)
-	return json.Marshal(s)
+	keyOrder := map[string][]string{}
+	for ptr, keys := range orders {
+		keyOrder[strings.Replace(ptr, "/$defs/", "/definitions/", 1)] = keys
+	}
+	var b bytes.Buffer
+	if err := marshalOrdered(&b, s, "", keyOrder); err != nil {
+		return nil, err
+	}
+	return b.Bytes(), nil
 }
 
 // isPerWeek reports whether a contract node is a per-week value: a oneOf with
@@ -260,4 +286,96 @@ func CheckAgainst(schema, doc []byte) error {
 		return err
 	}
 	return compiled.Validate(v)
+}
+
+// propertyOrders returns the keys of every "properties" object in raw, by the
+// object's JSON Pointer, in document order (a decoded map loses it).
+func propertyOrders(raw []byte) (map[string][]string, error) {
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	out := map[string][]string{}
+	var walk func(ptr string) error
+	walk = func(ptr string) error {
+		tok, err := dec.Token()
+		if err != nil {
+			return err
+		}
+		switch tok {
+		case json.Delim('{'):
+			for dec.More() {
+				kt, err := dec.Token()
+				if err != nil {
+					return err
+				}
+				key := kt.(string)
+				if strings.HasSuffix(ptr, "/properties") {
+					out[ptr] = append(out[ptr], key)
+				}
+				if err := walk(ptr + "/" + strings.NewReplacer("~", "~0", "/", "~1").Replace(key)); err != nil {
+					return err
+				}
+			}
+			_, err = dec.Token() // }
+			return err
+		case json.Delim('['):
+			for i := 0; dec.More(); i++ {
+				if err := walk(fmt.Sprintf("%s/%d", ptr, i)); err != nil {
+					return err
+				}
+			}
+			_, err = dec.Token() // ]
+			return err
+		}
+		return nil
+	}
+	return out, walk("")
+}
+
+// marshalOrdered encodes v like json.Marshal, except that objects listed in
+// order (by JSON Pointer) write those keys first, in that order: json-editor
+// builds and sets values in the order of a properties object's keys.
+func marshalOrdered(b *bytes.Buffer, v any, ptr string, order map[string][]string) error {
+	switch t := v.(type) {
+	case map[string]any:
+		keys := slices.Clone(order[ptr])
+		keys = slices.DeleteFunc(keys, func(k string) bool { _, ok := t[k]; return !ok })
+		var rest []string
+		for k := range t {
+			if !slices.Contains(keys, k) {
+				rest = append(rest, k)
+			}
+		}
+		slices.Sort(rest)
+		b.WriteByte('{')
+		for i, k := range append(keys, rest...) {
+			if i > 0 {
+				b.WriteByte(',')
+			}
+			name, _ := json.Marshal(k)
+			b.Write(name)
+			b.WriteByte(':')
+			child := ptr + "/" + strings.NewReplacer("~", "~0", "/", "~1").Replace(k)
+			if err := marshalOrdered(b, t[k], child, order); err != nil {
+				return err
+			}
+		}
+		b.WriteByte('}')
+	case []any:
+		b.WriteByte('[')
+		for i, c := range t {
+			if i > 0 {
+				b.WriteByte(',')
+			}
+			if err := marshalOrdered(b, c, fmt.Sprintf("%s/%d", ptr, i), order); err != nil {
+				return err
+			}
+		}
+		b.WriteByte(']')
+	default:
+		enc, err := json.Marshal(t)
+		if err != nil {
+			return err
+		}
+		b.Write(enc)
+	}
+	return nil
 }
