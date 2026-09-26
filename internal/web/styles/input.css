@@ -3,3 +3,12 @@
 
 @source "../views";
 @source "../static/js/plan-form-theme.js";
+
+/* Native controls (select backgrounds and option lists, checkboxes,
+   scrollbars) follow the system theme; without this they stay light in
+   dark mode under the page's light text. */
+@layer base {
+  :root {
+    color-scheme: light dark;
+  }
+}

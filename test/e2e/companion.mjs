@@ -42,6 +42,32 @@ try {
   check("start workout opens the live page", /^[0-9a-f-]{36}$/.test(sessionID), sessionID);
   check("target is 80% of the TM", await evaluate(`document.querySelector('#companion').textContent.includes('@ 80 kg')`));
 
+  // Dark mode: the workout screen's selects must be readable. The browser
+  // paints a select's field and its option list natively, in the element's
+  // color-scheme, so that must allow dark; and the text must contrast with
+  // the background behind it (colours resolved through a canvas, since
+  // Tailwind reports oklch).
+  await send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: "dark" }] });
+  const readability = (sel) => evaluate(`JSON.stringify((() => {
+    const el = document.querySelector(${JSON.stringify(sel)});
+    if (!el) return { scheme: "missing", ratio: 0 };
+    const ctx = document.createElement("canvas").getContext("2d", { willReadFrequently: true });
+    const rgba = (c) => { ctx.clearRect(0, 0, 1, 1); ctx.fillStyle = c; ctx.fillRect(0, 0, 1, 1); return ctx.getImageData(0, 0, 1, 1).data; };
+    const lum = (c) => {
+      const [r, g, b] = [...rgba(c)].slice(0, 3).map((v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; });
+      return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    };
+    let bgEl = el;
+    while (bgEl && rgba(getComputedStyle(bgEl).backgroundColor)[3] === 0) bgEl = bgEl.parentElement;
+    const a = lum(getComputedStyle(el).color), b = lum(getComputedStyle(bgEl || document.body).backgroundColor);
+    return { scheme: getComputedStyle(el).colorScheme, ratio: (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05) };
+  })())`).then(JSON.parse);
+  for (const sel of ['#companion select[aria-label="Swap exercise"]', '#companion select[aria-label="Add exercise"]']) {
+    const r = await readability(sel);
+    check(`readable in dark mode: ${sel}`, r.scheme.includes("dark") && r.ratio >= 4.5, `color-scheme ${r.scheme}, contrast ${r.ratio.toFixed(2)}`);
+  }
+  await send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: "light" }] });
+
   const done = () => evaluate(`document.querySelectorAll('#companion [data-status=done]').length`);
   const synced = () => evaluate(`(document.querySelector('#companion [data-sync]')?.textContent || '').includes('saved')`);
 
