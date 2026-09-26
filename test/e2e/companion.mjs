@@ -60,11 +60,15 @@ try {
     let bgEl = el;
     while (bgEl && rgba(getComputedStyle(bgEl).backgroundColor)[3] === 0) bgEl = bgEl.parentElement;
     const a = lum(getComputedStyle(el).color), b = lum(getComputedStyle(bgEl || document.body).backgroundColor);
-    return { scheme: getComputedStyle(el).colorScheme, ratio: (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05) };
+    // Chromium (Brave) paints the opened option list with the select's own
+    // background, so it needs one; transparent falls back to white.
+    const own = rgba(getComputedStyle(el).backgroundColor)[3] > 0;
+    return { scheme: getComputedStyle(el).colorScheme, own, ratio: (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05) };
   })())`).then(JSON.parse);
   for (const sel of ['#companion select[aria-label="Swap exercise"]', '#companion select[aria-label="Add exercise"]']) {
     const r = await readability(sel);
-    check(`readable in dark mode: ${sel}`, r.scheme.includes("dark") && r.ratio >= 4.5, `color-scheme ${r.scheme}, contrast ${r.ratio.toFixed(2)}`);
+    check(`readable in dark mode: ${sel}`, r.scheme.includes("dark") && r.own && r.ratio >= 4.5,
+      `color-scheme ${r.scheme}, own background ${r.own}, contrast ${r.ratio.toFixed(2)}`);
   }
   await send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: "light" }] });
 

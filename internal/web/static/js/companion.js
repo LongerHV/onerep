@@ -148,6 +148,9 @@ const weightText = (kg, unit) => (kg === null || kg === undefined ? "" : `${fmt(
 const repsText = (r) => (!r ? "" : r.amrap ? "AMRAP" : r.min === r.max ? String(r.min) : `${r.min}-${r.max}`);
 const btn = "rounded bg-zinc-900 px-3 py-2 text-sm font-medium text-white dark:bg-zinc-100 dark:text-zinc-900";
 const btn2 = "rounded border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-700";
+// Selects need their own colours: Chromium (Brave) paints the opened option
+// list with the select's background, and a transparent one falls back to white.
+const select = btn2 + " bg-white text-zinc-900 dark:bg-zinc-900 dark:text-zinc-100";
 const prBadge = "rounded bg-amber-200 px-1.5 py-0.5 text-xs font-medium text-amber-900 dark:bg-amber-900 dark:text-amber-100";
 const input = "w-full rounded border border-zinc-300 bg-white px-2 py-2 text-lg dark:border-zinc-700 dark:bg-zinc-900";
 
@@ -358,7 +361,7 @@ class Companion {
       h("button", { type: "button", class: btn2, onclick: () => this.update(core.skip(this.state, step)) }, "Skip"),
       h("button", { type: "button", class: btn2, onclick: () => this.update(core.addSet(this.state, step.g, step.e)) }, "Add set"),
       ex.alternatives.length > 0 && h("select", {
-        class: btn2, "aria-label": "Swap exercise",
+        class: select, "aria-label": "Swap exercise",
         onchange: (e) => e.target.value && this.update(core.swap(this.state, step.g, step.e, e.target.value, ex.planned)),
       }, h("option", { value: "" }, "Swap…"), ex.alternatives.map((a) => h("option", { value: a }, core.exerciseInfo(b, a).name)))));
     return h("section", { class: "mt-4 rounded border border-zinc-200 p-4 dark:border-zinc-800" },
@@ -440,7 +443,7 @@ class Companion {
 
   addExerciseControl() {
     return h("select", {
-      class: btn2, "aria-label": "Add exercise",
+      class: select, "aria-label": "Add exercise",
       onchange: (e) => e.target.value && this.update(core.addExercise(this.boot, this.state, e.target.value)),
     }, h("option", { value: "" }, "Add exercise…"), (this.boot.catalog || []).map((c) => h("option", { value: c.slug }, c.name)));
   }
