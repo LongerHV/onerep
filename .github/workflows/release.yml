@@ -10,7 +10,14 @@ permissions:
   packages: write
 
 jobs:
+  ci:
+    uses: ./.github/workflows/ci.yml
+    permissions:
+      contents: read
+      pull-requests: read # ci.yml's pr-title job asks for it (it's skipped on push)
+
   publish:
+    needs: ci
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -23,7 +30,11 @@ jobs:
         run: |
           export KO_DOCKER_REPO="ghcr.io/${GITHUB_REPOSITORY,,}"
           if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
-            tags="${GITHUB_REF_NAME#v},latest"
+            tags="${GITHUB_REF_NAME#v}"
+            # Only a final release (v1.2.3, not v1.2.3-rc.1) moves latest.
+            if [[ "$GITHUB_REF_NAME" != *-* ]]; then
+              tags="$tags,latest"
+            fi
           else
             tags="edge,sha-${GITHUB_SHA::7}"
           fi
