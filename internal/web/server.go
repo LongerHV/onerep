@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"time"
 
 	"github.com/a-h/templ"
@@ -57,9 +58,12 @@ func (s *Server) Routes() http.Handler {
 	r.With(s.layout).Get("/auth/signed-out", func(w http.ResponseWriter, r *http.Request) {
 		render(w, r, http.StatusOK, views.SignedOut(page(r, "Signed out")))
 	})
+	// Signing out needs no session: an expired one just lands on the signed-out
+	// page. CSRF still applies whenever there is a session to end.
+	r.With(s.limitBody, auth.CSRF).Post("/auth/logout", s.logout)
 	if s.OIDC != nil {
 		r.Get("/auth/login", s.OIDC.Login)
-		r.Get("/auth/callback", s.OIDC.Callback)
+		r.With(s.layout).Get("/auth/callback", s.OIDC.Callback(s.loginFailed))
 	} else {
 		r.Get("/auth/login", func(w http.ResponseWriter, r *http.Request) {
 			http.Redirect(w, r, "/", http.StatusSeeOther)
@@ -73,7 +77,6 @@ func (s *Server) Routes() http.Handler {
 		}
 		r.Use(auth.RequireUser, s.limitBody, auth.CSRF, s.starterEquipment)
 		r.Get("/", s.home)
-		r.Post("/auth/logout", s.logout)
 		s.exerciseRoutes(r)
 		s.planRoutes(r)
 		s.sessionRoutes(r)
@@ -168,6 +171,15 @@ func (s *Server) logout(w http.ResponseWriter, r *http.Request) {
 		slog.ErrorContext(r.Context(), "logout", "err", err)
 	}
 	http.Redirect(w, r, "/auth/signed-out", http.StatusSeeOther)
+}
+
+// loginFailed renders the page for a failed sign-in, with a link to start again.
+func (s *Server) loginFailed(w http.ResponseWriter, r *http.Request, e auth.LoginError) {
+	login := "/auth/login"
+	if e.Next != "" && e.Next != "/" {
+		login += "?next=" + url.QueryEscape(e.Next)
+	}
+	render(w, r, e.Status, views.LoginFailed(page(r, "Sign-in failed"), e.Message, login, middleware.GetReqID(r.Context())))
 }
 
 // user returns the signed-in user. Only call it behind auth.RequireUser.

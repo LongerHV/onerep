@@ -48,57 +48,83 @@ func (db *DB) UserExercise(ctx context.Context, userID, slug string) (UserExerci
 // SetExerciseEquipment links slug to one of the user's equipment profiles
 // ("" removes the link). A profile of another user is ErrNotFound.
 func (db *DB) SetExerciseEquipment(ctx context.Context, userID, slug, equipmentID string) error {
-	return db.tx(ctx, func(tx *sql.Tx) error {
-		if equipmentID != "" {
-			var one int
-			err := tx.QueryRowContext(ctx, `SELECT 1 FROM equipment WHERE id = ? AND user_id = ?`,
-				equipmentID, userID).Scan(&one)
-			if errors.Is(err, sql.ErrNoRows) {
-				return ErrNotFound
-			}
-			if err != nil {
-				return err
-			}
+	return db.tx(ctx, func(tx *sql.Tx) error { return setExerciseEquipment(ctx, tx, userID, slug, equipmentID) })
+}
+
+func setExerciseEquipment(ctx context.Context, tx *sql.Tx, userID, slug, equipmentID string) error {
+	if equipmentID != "" {
+		var one int
+		err := tx.QueryRowContext(ctx, `SELECT 1 FROM equipment WHERE id = ? AND user_id = ?`,
+			equipmentID, userID).Scan(&one)
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrNotFound
 		}
-		_, err := tx.ExecContext(ctx, `INSERT INTO user_exercise (user_id, slug, equipment_id, updated_at)
-			VALUES (?, ?, ?, ?)
-			ON CONFLICT (user_id, slug) DO UPDATE SET equipment_id = excluded.equipment_id, updated_at = excluded.updated_at`,
-			userID, slug, nullString(equipmentID), formatTime(time.Now()))
-		return err
-	})
+		if err != nil {
+			return err
+		}
+	}
+	_, err := tx.ExecContext(ctx, `INSERT INTO user_exercise (user_id, slug, equipment_id, updated_at)
+		VALUES (?, ?, ?, ?)
+		ON CONFLICT (user_id, slug) DO UPDATE SET equipment_id = excluded.equipment_id, updated_at = excluded.updated_at`,
+		userID, slug, nullString(equipmentID), formatTime(time.Now()))
+	return err
 }
 
 // SetTrainingMax sets (or with nil clears) the training max for slug and
 // records the change. Setting the current value again records nothing.
 func (db *DB) SetTrainingMax(ctx context.Context, userID, slug string, newKg *float64, source, note string) error {
+	return db.tx(ctx, func(tx *sql.Tx) error { return setTrainingMax(ctx, tx, userID, slug, newKg, source, note) })
+}
+
+func setTrainingMax(ctx context.Context, tx *sql.Tx, userID, slug string, newKg *float64, source, note string) error {
+	var old sql.NullFloat64
+	err := tx.QueryRowContext(ctx, `SELECT training_max_kg FROM user_exercise WHERE user_id = ? AND slug = ?`,
+		userID, slug).Scan(&old)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return err
+	}
+	var oldKg *float64
+	if old.Valid {
+		oldKg = &old.Float64
+	}
+	if (oldKg == nil && newKg == nil) || (oldKg != nil && newKg != nil && *oldKg == *newKg) {
+		return nil
+	}
+	now := formatTime(time.Now())
+	if _, err := tx.ExecContext(ctx, `INSERT INTO user_exercise (user_id, slug, training_max_kg, updated_at)
+		VALUES (?, ?, ?, ?)
+		ON CONFLICT (user_id, slug) DO UPDATE SET training_max_kg = excluded.training_max_kg, updated_at = excluded.updated_at`,
+		userID, slug, newKg, now); err != nil {
+		return err
+	}
+	id, err := newID()
+	if err != nil {
+		return err
+	}
+	_, err = tx.ExecContext(ctx, `INSERT INTO training_max_log (id, user_id, slug, old_kg, new_kg, source, note, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, id, userID, slug, oldKg, newKg, source, note, now)
+	return err
+}
+
+// ExerciseSettings is one save of the exercise settings form.
+type ExerciseSettings struct {
+	EquipmentID    string // "" = use the default profile for the exercise's kind
+	SetTrainingMax bool   // false leaves the training max alone
+	TrainingMaxKg  *float64
+	Source         string
+}
+
+// SaveExerciseSettings saves the equipment link and, if asked, the training
+// max of slug in one transaction: either both change or neither does.
+func (db *DB) SaveExerciseSettings(ctx context.Context, userID, slug string, s ExerciseSettings) error {
 	return db.tx(ctx, func(tx *sql.Tx) error {
-		var old sql.NullFloat64
-		err := tx.QueryRowContext(ctx, `SELECT training_max_kg FROM user_exercise WHERE user_id = ? AND slug = ?`,
-			userID, slug).Scan(&old)
-		if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		if err := setExerciseEquipment(ctx, tx, userID, slug, s.EquipmentID); err != nil {
 			return err
 		}
-		var oldKg *float64
-		if old.Valid {
-			oldKg = &old.Float64
-		}
-		if (oldKg == nil && newKg == nil) || (oldKg != nil && newKg != nil && *oldKg == *newKg) {
+		if !s.SetTrainingMax {
 			return nil
 		}
-		now := formatTime(time.Now())
-		if _, err := tx.ExecContext(ctx, `INSERT INTO user_exercise (user_id, slug, training_max_kg, updated_at)
-			VALUES (?, ?, ?, ?)
-			ON CONFLICT (user_id, slug) DO UPDATE SET training_max_kg = excluded.training_max_kg, updated_at = excluded.updated_at`,
-			userID, slug, newKg, now); err != nil {
-			return err
-		}
-		id, err := newID()
-		if err != nil {
-			return err
-		}
-		_, err = tx.ExecContext(ctx, `INSERT INTO training_max_log (id, user_id, slug, old_kg, new_kg, source, note, created_at)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, id, userID, slug, oldKg, newKg, source, note, now)
-		return err
+		return setTrainingMax(ctx, tx, userID, slug, s.TrainingMaxKg, s.Source, "")
 	})
 }
 

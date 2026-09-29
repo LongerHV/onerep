@@ -21,7 +21,10 @@ templ HistoryList(p Page, sessions []store.SessionSummary, pageNo int, more bool
 							<span class={ badge }>in progress</span>
 						}
 					</span>
-					<span class="text-sm text-zinc-500">{ s.StartedAt.Local().Format("2006-01-02 15:04") } · { strconv.Itoa(s.Sets) } sets</span>
+					<span class="text-sm text-zinc-500">
+						@LocalTime(s.StartedAt, "datetime")
+						· { strconv.Itoa(s.Sets) } sets
+					</span>
 				</a>
 			</li>
 		}
@@ -42,7 +45,7 @@ templ HistoryDetailPage(p Page, d HistoryDetail) {
 		<div>
 			<h1 class={ h1 }>{ d.Session.Name }</h1>
 			<p class="text-sm text-zinc-500">
-				{ d.Session.StartedAt.Local().Format("Mon 2006-01-02 15:04") }
+				@LocalTime(d.Session.StartedAt, "weekday")
 				if d.Session.FinishedAt == nil {
 					<span class={ badge }>in progress</span>
 				}

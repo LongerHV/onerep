@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -156,6 +157,11 @@ func TestHistoryEditor(t *testing.T) {
 	if !strings.Contains(page, "Barbell Bench Press") || !strings.Contains(page, `value="80"`) {
 		t.Fatalf("history detail:\n%.600s", page)
 	}
+	// Times are sent in UTC for the browser to show in the user's timezone.
+	stamp := regexp.MustCompile(`<time datetime="\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ" data-local="(datetime|weekday)">[^<]* UTC</time>`)
+	if !stamp.MatchString(list) || !stamp.MatchString(page) {
+		t.Fatalf("history times are not <time data-local> in UTC:\n%s", list)
+	}
 
 	// Correct the weight (in the user's unit), add a set, delete it again.
 	edit := url.Values{"set_id": {setID}, "slug": {"barbell-bench-press"}, "kind": {"working"}, "group_pos": {"0"},
@@ -256,6 +262,44 @@ func TestHistoryAddedSetPlacement(t *testing.T) {
 	}
 }
 
+// A superset is logged A, B, A, B; history shows each exercise once, in the
+// order first done, with all its sets.
+func TestHistoryGroupsSupersetsByExercise(t *testing.T) {
+	srv, c := newApp(t, "alice")
+	csrf := session(t, srv, c)
+	resp, _ := post(t, c, srv.URL+"/sessions", csrf, url.Values{"kind": {"adhoc"}})
+	id := regexp.MustCompile(`/sessions/([0-9a-f-]+)/live`).FindStringSubmatch(resp.Header.Get("Location"))[1]
+	var ops []string
+	now := time.Now().UTC()
+	for i, s := range []struct {
+		slug        string
+		ex, set, kg int
+	}{{"barbell-bench-press", 0, 0, 80}, {"barbell-row", 1, 0, 60}, {"barbell-bench-press", 0, 1, 82}, {"barbell-row", 1, 1, 62}} {
+		at := now.Add(time.Duration(i) * time.Minute).Format(time.RFC3339Nano)
+		op, _ := json.Marshal(map[string]any{"op_id": "01900000-0000-7000-8000-0000000001a" + strconv.Itoa(i), "op": "upsert_set", "payload": map[string]any{
+			"id": "01900000-0000-7000-8000-0000000001b" + strconv.Itoa(i), "session_id": id, "slug": s.slug, "group_pos": 0,
+			"exercise_pos": s.ex, "set_pos": s.set, "kind": "working", "weight_kg": s.kg, "reps": 8, "done_at": at, "updated_at": at}})
+		ops = append(ops, string(op))
+	}
+	if _, body := syncOps(t, c, srv.URL, csrf, `{"ops": [`+strings.Join(ops, ",")+`]}`); strings.Contains(body, "rejected") {
+		t.Fatalf("sync: %s", body)
+	}
+	page := read(t, mustGet(t, c, srv.URL+"/history/"+id))
+	bench, row := strings.Count(page, ">Barbell Bench Press</h2>"), strings.Count(page, ">Barbell Row</h2>")
+	if bench != 1 || row != 1 {
+		t.Fatalf("headings: bench %d, row %d, want 1 each", bench, row)
+	}
+	order := []string{">Barbell Bench Press</h2>", `value="80"`, `value="82"`, ">Barbell Row</h2>", `value="60"`, `value="62"`}
+	last := -1
+	for _, s := range order {
+		i := strings.Index(page, s)
+		if i < last {
+			t.Fatalf("%s out of order in:\n%s", s, page)
+		}
+		last = i
+	}
+}
+
 // Following a plan must not hide the option to train something else.
 func TestEmptyWorkoutWhileFollowingAPlan(t *testing.T) {
 	srv, c := newApp(t, "alice")
@@ -264,5 +308,49 @@ func TestEmptyWorkoutWhileFollowingAPlan(t *testing.T) {
 	post(t, c, srv.URL+"/plans/"+planID(t, resp)+"/follow", csrf, nil)
 	if home := read(t, mustGet(t, c, srv.URL+"/")); !strings.Contains(home, "Next: Upper") || !strings.Contains(home, "Start an empty workout") {
 		t.Fatal("no empty workout option next to the planned day")
+	}
+}
+
+// The companion refreshes a session's sets after syncing, so sets deleted in
+// history or on another device disappear from an open workout screen. The
+// page's own bootstrap can't tell it that: it may be an offline or history
+// copy from before the latest sets were synced.
+func TestSessionSetsAPI(t *testing.T) {
+	srv, c, db := newAppDB(t, "alice")
+	csrf := session(t, srv, c)
+	id := startPlanned(t, srv.URL, c, csrf)
+	setID := "01900000-0000-7000-8000-0000000000b1"
+	syncOps(t, c, srv.URL, csrf, `{"ops": [`+setOpJSON("01900000-0000-7000-8000-0000000000a1", setID, id, 80, 5)+`]}`)
+
+	resp := mustGet(t, c, srv.URL+"/api/sessions/"+id+"/sets")
+	var out struct {
+		Sets []training.SetInput `json:"sets"`
+	}
+	if body := read(t, resp); resp.StatusCode != http.StatusOK || json.Unmarshal([]byte(body), &out) != nil {
+		t.Fatalf("sets: %d %s", resp.StatusCode, body)
+	}
+	if len(out.Sets) != 1 || out.Sets[0].ID != setID {
+		t.Fatalf("sets = %+v", out.Sets)
+	}
+
+	post(t, c, srv.URL+"/history/"+id+"/sets/"+setID+"/delete", csrf, nil)
+	if body := read(t, mustGet(t, c, srv.URL+"/api/sessions/"+id+"/sets")); !strings.Contains(body, `"sets":[]`) {
+		t.Fatalf("after delete: %s", body)
+	}
+
+	// Another user's session is not found.
+	ctx := context.Background()
+	bob, err := db.UpsertOIDCUser(ctx, "dev", "bob", "bob@localhost", "bob")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ex := &exercise.Service{Store: db}
+	svc := &training.Service{Store: db, Exercises: ex, Plans: &plan.Service{Store: db, Exercises: ex, History: db}}
+	theirs, err := svc.StartAdHoc(ctx, bob)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp := mustGet(t, c, srv.URL+"/api/sessions/"+theirs.ID+"/sets"); resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("another user's session: %d", resp.StatusCode)
 	}
 }

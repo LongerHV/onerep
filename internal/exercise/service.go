@@ -32,6 +32,7 @@ type Store interface {
 	UserExercise(ctx context.Context, userID, slug string) (store.UserExercise, error)
 	SetExerciseEquipment(ctx context.Context, userID, slug, equipmentID string) error
 	SetTrainingMax(ctx context.Context, userID, slug string, newKg *float64, source, note string) error
+	SaveExerciseSettings(ctx context.Context, userID, slug string, s store.ExerciseSettings) error
 	TrainingMaxHistory(ctx context.Context, userID, slug string) ([]store.TrainingMaxChange, error)
 }
 
@@ -119,19 +120,24 @@ func (s *Service) Get(ctx context.Context, userID, slug string) (store.Exercise,
 	return s.Store.ExerciseBySlug(ctx, userID, slug)
 }
 
-// Create adds a new user exercise. The slug must not be in use.
+// Create adds a new user exercise. The slug must not be in the user's
+// catalog. A hidden seeded exercise (dropped from the seed) doesn't count: its
+// slug becomes the user's own exercise, which keeps any history and settings
+// already recorded under it, and stays theirs if the seed brings it back.
 func (s *Service) Create(ctx context.Context, userID string, in Input) (store.Exercise, error) {
 	in = normalize(in)
 	errs := in.validate()
-	if _, err := s.Store.ExerciseBySlug(ctx, userID, in.Slug); err == nil {
+	if ex, err := s.Store.ExerciseBySlug(ctx, userID, in.Slug); err == nil && (ex.Custom() || !ex.Hidden) {
 		errs["slug"] = "an exercise with this slug already exists"
-	} else if !errors.Is(err, store.ErrNotFound) {
+	} else if err != nil && !errors.Is(err, store.ErrNotFound) {
 		return store.Exercise{}, err
 	}
 	if len(errs) > 0 {
 		return store.Exercise{}, errs
 	}
-	return s.Store.SaveUserExercise(ctx, userID, toStore(in))
+	e := toStore(in)
+	e.Original = true
+	return s.Store.SaveUserExercise(ctx, userID, e)
 }
 
 // Update changes an existing exercise. Updating a seeded exercise creates the
@@ -148,6 +154,9 @@ func (s *Service) Update(ctx context.Context, userID string, in Input) (store.Ex
 }
 
 // Delete removes the user's own exercise, or restores a customized seeded one.
+// The user's settings for the slug (training max and its log, equipment link,
+// added alternatives) are kept on purpose: logged history is keyed by slug,
+// and they come back if the exercise is created again.
 func (s *Service) Delete(ctx context.Context, userID, slug string) error {
 	return s.Store.DeleteUserExercise(ctx, userID, slug)
 }
@@ -184,13 +193,26 @@ type AlternativeView struct {
 }
 
 // Alternatives lists the alternatives of slug that exist in the user's catalog.
+// The seed's alternatives describe seeded exercises, so they don't apply to an
+// exercise the user created, on either side, even if its slug matches a seed.
 func (s *Service) Alternatives(ctx context.Context, userID, slug string) ([]AlternativeView, error) {
 	alts, err := s.Store.Alternatives(ctx, userID, slug)
 	if err != nil {
 		return nil, err
 	}
 	var out []AlternativeView
+	var self *store.Exercise
 	for _, a := range alts {
+		if !a.UserAdded && self == nil {
+			ex, err := s.Store.ExerciseBySlug(ctx, userID, slug)
+			if err != nil && !errors.Is(err, store.ErrNotFound) {
+				return nil, err
+			}
+			self = &ex
+		}
+		if !a.UserAdded && ownExercise(*self) {
+			continue
+		}
 		e, err := s.Store.ExerciseBySlug(ctx, userID, a.Slug)
 		if errors.Is(err, store.ErrNotFound) {
 			continue
@@ -198,10 +220,17 @@ func (s *Service) Alternatives(ctx context.Context, userID, slug string) ([]Alte
 		if err != nil {
 			return nil, err
 		}
+		if !a.UserAdded && ownExercise(e) {
+			continue
+		}
 		out = append(out, AlternativeView{Exercise: e, UserAdded: a.UserAdded})
 	}
 	return out, nil
 }
+
+// ownExercise reports whether e is the user's own and not a customized copy
+// of a visible seeded exercise.
+func ownExercise(e store.Exercise) bool { return e.Custom() && !e.Overrides }
 
 func (s *Service) AddAlternative(ctx context.Context, userID, slug, altSlug string) error {
 	if slug == altSlug {
@@ -240,8 +269,13 @@ func (s *Service) Settings(ctx context.Context, userID string, ex store.Exercise
 		if err != nil {
 			return Settings{}, err
 		}
-		st.Equipment, st.Linked = &eq, true
-		return st, nil
+		// A link to a profile of another kind (the exercise's kind changed
+		// since) is ignored; the next settings save drops it.
+		if eq.Spec.Kind == ex.EquipmentKind {
+			st.Equipment, st.Linked = &eq, true
+			return st, nil
+		}
+		st.EquipmentID = ""
 	}
 	eq, err := s.Store.DefaultEquipment(ctx, userID, ex.EquipmentKind)
 	if errors.Is(err, store.ErrNotFound) {
@@ -254,26 +288,68 @@ func (s *Service) Settings(ctx context.Context, userID string, ex store.Exercise
 	return st, nil
 }
 
-// LinkEquipment links slug to a profile; "" goes back to the kind's default.
+// LinkEquipment links slug to a profile of the exercise's kind; "" goes back
+// to the kind's default.
 func (s *Service) LinkEquipment(ctx context.Context, userID, slug, equipmentID string) error {
-	if _, err := s.Store.ExerciseBySlug(ctx, userID, slug); err != nil {
-		return err
-	}
-	return s.Store.SetExerciseEquipment(ctx, userID, slug, equipmentID)
+	return s.SaveSettings(ctx, userID, slug, SettingsInput{EquipmentID: equipmentID}, "")
 }
 
 // MaxTrainingMaxKg bounds training max input; heavier is a typo.
 const MaxTrainingMaxKg = 1500
 
+func checkTrainingMax(kg *float64) string {
+	if kg != nil && !(*kg > 0 && *kg <= MaxTrainingMaxKg) { // also rejects NaN
+		return "enter a positive weight, up to 1,500 kg"
+	}
+	return ""
+}
+
 // SetTrainingMax sets (nil clears) the training max of slug.
 func (s *Service) SetTrainingMax(ctx context.Context, userID, slug string, kg *float64, source string) error {
-	if kg != nil && !(*kg > 0 && *kg <= MaxTrainingMaxKg) { // also rejects NaN
-		return FieldErrors{"training_max": "enter a positive weight"}
+	if msg := checkTrainingMax(kg); msg != "" {
+		return FieldErrors{"training_max": msg}
 	}
 	if _, err := s.Store.ExerciseBySlug(ctx, userID, slug); err != nil {
 		return err
 	}
 	return s.Store.SetTrainingMax(ctx, userID, slug, kg, source, "")
+}
+
+// SettingsInput is one save of an exercise's settings.
+type SettingsInput struct {
+	EquipmentID    string // "" = the default profile for the exercise's kind
+	SetTrainingMax bool   // false leaves the training max alone
+	TrainingMaxKg  *float64
+}
+
+// SaveSettings validates the whole input, then saves the equipment link and
+// the training max together: a rejected field changes nothing. The profile
+// must be the user's (else ErrNotFound) and of the exercise's kind.
+func (s *Service) SaveSettings(ctx context.Context, userID, slug string, in SettingsInput, source string) error {
+	ex, err := s.Store.ExerciseBySlug(ctx, userID, slug)
+	if err != nil {
+		return err
+	}
+	errs := FieldErrors{}
+	if in.EquipmentID != "" {
+		eq, err := s.Store.EquipmentByID(ctx, userID, in.EquipmentID)
+		if err != nil {
+			return err
+		}
+		if eq.Spec.Kind != ex.EquipmentKind {
+			errs["equipment_id"] = "choose a " + ex.EquipmentKind + " profile, or the default"
+		}
+	}
+	if in.SetTrainingMax {
+		if msg := checkTrainingMax(in.TrainingMaxKg); msg != "" {
+			errs["training_max"] = msg
+		}
+	}
+	if len(errs) > 0 {
+		return errs
+	}
+	return s.Store.SaveExerciseSettings(ctx, userID, slug, store.ExerciseSettings{EquipmentID: in.EquipmentID,
+		SetTrainingMax: in.SetTrainingMax, TrainingMaxKg: in.TrainingMaxKg, Source: source})
 }
 
 func (s *Service) TrainingMaxHistory(ctx context.Context, userID, slug string) ([]store.TrainingMaxChange, error) {

@@ -8,6 +8,7 @@ import (
 	"net/http/cookiejar"
 	"net/http/httptest"
 	"net/url"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -19,6 +20,12 @@ import (
 
 // oidcEnv runs a mock identity provider and an onerep-like app using OIDC.
 func oidcEnv(t *testing.T) (*mockoidc.MockOIDC, *httptest.Server, *http.Client) {
+	t.Helper()
+	return oidcEnvWith(t, nil)
+}
+
+// oidcEnvWith is oidcEnv with fail rendering the callback's error pages.
+func oidcEnvWith(t *testing.T, fail LoginFailure) (*mockoidc.MockOIDC, *httptest.Server, *http.Client) {
 	t.Helper()
 	m, err := mockoidc.Run()
 	if err != nil {
@@ -37,7 +44,7 @@ func oidcEnv(t *testing.T) (*mockoidc.MockOIDC, *httptest.Server, *http.Client) 
 		t.Fatal(err)
 	}
 	mux.HandleFunc("GET /auth/login", o.Login)
-	mux.HandleFunc("GET /auth/callback", o.Callback)
+	mux.HandleFunc("GET /auth/callback", o.Callback(fail))
 	mux.Handle("GET /", RequireUser(whoami))
 
 	jar, _ := cookiejar.New(nil)
@@ -94,7 +101,7 @@ func TestOIDCCallbackRejectsStateMismatch(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := body(t, resp); resp.StatusCode != http.StatusBadRequest || !strings.Contains(got, "state mismatch") {
+	if got := body(t, resp); resp.StatusCode != http.StatusBadRequest || !strings.Contains(got, "sign-in has expired") {
 		t.Fatalf("got %d %q", resp.StatusCode, got)
 	}
 }
@@ -105,9 +112,124 @@ func TestOIDCCallbackWithoutFlowCookie(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := body(t, resp); resp.StatusCode != http.StatusBadRequest || !strings.Contains(got, "invalid login state") {
+	if got := body(t, resp); resp.StatusCode != http.StatusBadRequest || !strings.Contains(got, "sign-in has expired") {
 		t.Fatalf("got %d %q", resp.StatusCode, got)
 	}
+}
+
+// startLogin begins a login at the app and returns the identity provider URL
+// it redirects to, without following it.
+func startLogin(t *testing.T, app *httptest.Server, client *http.Client, next string) string {
+	t.Helper()
+	c := *client
+	c.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+	resp, err := c.Get(app.URL + "/auth/login?next=" + url.QueryEscape(next))
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusFound {
+		t.Fatalf("login: %d", resp.StatusCode)
+	}
+	return resp.Header.Get("Location")
+}
+
+func flowCookies(t *testing.T, app *httptest.Server, client *http.Client) int {
+	t.Helper()
+	u, _ := url.Parse(app.URL + "/auth/callback")
+	n := 0
+	for _, c := range client.Jar.Cookies(u) {
+		if strings.HasPrefix(c.Name, flowCookie) {
+			n++
+		}
+	}
+	return n
+}
+
+// Two tabs signing in at once each keep their own flow state.
+func TestOIDCTwoLoginsAtOnce(t *testing.T) {
+	m, app, client := oidcEnv(t)
+	idpA := startLogin(t, app, client, "/a")
+	idpB := startLogin(t, app, client, "/b")
+	m.QueueUser(&mockoidc.MockUser{Subject: "u-1", PreferredUsername: "jane"})
+	m.QueueUser(&mockoidc.MockUser{Subject: "u-1", PreferredUsername: "jane"})
+	for _, tc := range []struct{ idp, next string }{{idpA, "/a"}, {idpB, "/b"}} {
+		resp, err := client.Get(tc.idp)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := body(t, resp); resp.StatusCode != http.StatusOK || got != "jane" || resp.Request.URL.Path != tc.next {
+			t.Fatalf("login to %s: %d %q at %s", tc.next, resp.StatusCode, got, resp.Request.URL)
+		}
+	}
+	if n := flowCookies(t, app, client); n != 0 {
+		t.Errorf("%d flow cookies left behind after their logins finished", n)
+	}
+}
+
+// Abandoned logins don't pile up cookies: only the newest few flows are kept.
+func TestOIDCFlowCookiesAreBounded(t *testing.T) {
+	m, app, client := oidcEnv(t)
+	var last string
+	for i := range 3 * maxLoginFlows {
+		last = startLogin(t, app, client, "/n"+strconv.Itoa(i))
+	}
+	if n := flowCookies(t, app, client); n == 0 || n > maxLoginFlows {
+		t.Fatalf("%d flow cookies, want 1..%d", n, maxLoginFlows)
+	}
+	m.QueueUser(&mockoidc.MockUser{Subject: "u-1", PreferredUsername: "jane"})
+	resp, err := client.Get(last)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := body(t, resp); got != "jane" {
+		t.Fatalf("newest login: %d %q", resp.StatusCode, got)
+	}
+}
+
+// Errors go to the error page renderer with a user-facing message and the
+// page to return to after signing in again.
+func TestOIDCCallbackErrorPage(t *testing.T) {
+	var got LoginError
+	fail := func(w http.ResponseWriter, _ *http.Request, e LoginError) {
+		got = e
+		w.WriteHeader(e.Status)
+	}
+	_, app, client := oidcEnvWith(t, fail)
+	idp := startLogin(t, app, client, "/plans")
+	state := mustQuery(t, idp).Get("state")
+
+	resp, err := client.Get(app.URL + "/auth/callback?error=access_denied&state=" + url.QueryEscape(state))
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusForbidden || got.Status != http.StatusForbidden ||
+		!strings.Contains(got.Message, "cancelled") || got.Next != "/plans" {
+		t.Fatalf("access_denied: %d %+v", resp.StatusCode, got)
+	}
+	if n := flowCookies(t, app, client); n != 0 {
+		t.Errorf("%d flow cookies left behind after a refused login", n)
+	}
+
+	got = LoginError{}
+	resp, err = client.Get(app.URL + "/auth/callback?code=x&state=unknown")
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if got.Status != http.StatusBadRequest || !strings.Contains(got.Message, "sign-in has expired") || got.Next != "/" {
+		t.Fatalf("unknown state: %+v", got)
+	}
+}
+
+func mustQuery(t *testing.T, raw string) url.Values {
+	t.Helper()
+	u, err := url.Parse(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return u.Query()
 }
 
 func TestSafeNext(t *testing.T) {
@@ -182,7 +304,7 @@ func TestOIDCPublicClientLoginFlow(t *testing.T) {
 	}
 	o.oauth.Endpoint.TokenURL = proxy.URL
 	mux.HandleFunc("GET /auth/login", o.Login)
-	mux.HandleFunc("GET /auth/callback", o.Callback)
+	mux.HandleFunc("GET /auth/callback", o.Callback(nil))
 	mux.Handle("GET /", RequireUser(whoami))
 	jar, _ := cookiejar.New(nil)
 	client := &http.Client{Jar: jar}

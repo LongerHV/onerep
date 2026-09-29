@@ -61,7 +61,7 @@ func TestFollowAndMoveThroughPlan(t *testing.T) {
 	if err := e.svc.Follow(ctx, e.alice, p.ID); !errors.Is(err, ErrNoActiveVersion) {
 		t.Fatalf("following a draft-only plan: %v", err)
 	}
-	if _, err := e.svc.Activate(ctx, e.alice, draft.ID); err != nil {
+	if _, err := e.svc.Activate(ctx, e.alice, draft.ID, DocHash(draft.Doc)); err != nil {
 		t.Fatal(err)
 	}
 	if err := e.svc.Follow(ctx, e.bob, p.ID); !errors.Is(err, store.ErrNotFound) {
@@ -129,7 +129,7 @@ func TestFollowAndMoveThroughPlan(t *testing.T) {
 	if err != nil || !cmp.ResetsCursor || cmp.Base == nil || !Changed(cmp.JSON) || len(cmp.Days) != 4 {
 		t.Fatalf("comparison = %+v, %v", cmp, err)
 	}
-	reset, err := e.svc.Activate(ctx, e.alice, draft1.ID)
+	reset, err := e.svc.Activate(ctx, e.alice, draft1.ID, cmp.DocHash)
 	if err != nil || !reset {
 		t.Fatalf("activate 1-week version: reset=%v err=%v", reset, err)
 	}
@@ -277,13 +277,13 @@ func TestPlanNameFollowsTheActiveVersion(t *testing.T) {
 	if n := name(); n != "Block A" {
 		t.Fatalf("a draft renamed the plan to %q", n)
 	}
-	if _, err := e.svc.Activate(ctx, e.alice, draft.ID); err != nil {
+	if _, err := e.svc.Activate(ctx, e.alice, draft.ID, DocHash(draft.Doc)); err != nil {
 		t.Fatal(err)
 	}
 	if n := name(); n != "Block B idea" {
 		t.Fatalf("after activating the draft: %q", n)
 	}
-	if _, err := e.svc.Activate(ctx, e.alice, v1.ID); err != nil {
+	if _, err := e.svc.Activate(ctx, e.alice, v1.ID, DocHash(v1.Doc)); err != nil {
 		t.Fatal(err)
 	}
 	if n := name(); n != "Block A" {
@@ -365,7 +365,7 @@ func TestSaveDraftNeverTouchesActiveVersions(t *testing.T) {
 	if err != nil || d3.Version.ID != d2.Version.ID || !strings.Contains(string(d3.Version.Doc), "New v2b") {
 		t.Fatalf("replaced draft = %+v, %v", d3, err)
 	}
-	if _, err := svc.Activate(ctx, user, d3.Version.ID); err != nil {
+	if _, err := svc.Activate(ctx, user, d3.Version.ID, DocHash(d3.Version.Doc)); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := svc.SaveDraft(ctx, user, DraftInput{VersionID: d3.Version.ID, Doc: doc("Sneaky"), Source: "mcp"}); !errors.Is(err, store.ErrNotDraft) {
@@ -392,5 +392,130 @@ func TestSaveDraftKeepsOthersDrafts(t *testing.T) {
 	}
 	if got, _ := e.svc.Version(ctx, e.alice, v.ID); got.Source != "web" {
 		t.Fatalf("the user's draft was taken over: %+v", got)
+	}
+}
+
+func namedDoc(name string) []byte {
+	return []byte(`{"name":"` + name + `","weeks":1,"days":[{"name":"D","groups":[{"exercises":[{"slug":"barbell-back-squat","sets":[{"count":3,"reps":5}]}]}]}]}`)
+}
+
+// Activation takes the document the user reviewed: if the AI replaced the
+// draft since the compare page rendered it, activation is refused.
+func TestActivateRefusesAChangedDraft(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	d, err := e.svc.SaveDraft(ctx, e.alice, DraftInput{Doc: namedDoc("First"), Source: "mcp"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cmp, err := e.svc.Compare(ctx, e.alice, d.Version.ID)
+	if err != nil || cmp.DocHash == "" || cmp.DocHash != DocHash(d.Version.Doc) {
+		t.Fatalf("compare hash = %q, %v", cmp.DocHash, err)
+	}
+	if _, err := e.svc.SaveDraft(ctx, e.alice, DraftInput{VersionID: d.Version.ID, Doc: namedDoc("Second"), Source: "mcp"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.svc.Activate(ctx, e.alice, d.Version.ID, cmp.DocHash); !errors.Is(err, ErrDocChanged) {
+		t.Fatalf("activating a changed draft: %v", err)
+	}
+	if _, err := e.svc.Activate(ctx, e.alice, d.Version.ID, ""); !errors.Is(err, ErrDocChanged) {
+		t.Fatalf("activating without a hash: %v", err)
+	}
+	if v, _ := e.svc.Version(ctx, e.alice, d.Version.ID); v.Status != store.PlanDraft {
+		t.Fatalf("refused activation changed the version: %+v", v)
+	}
+	cmp, _ = e.svc.Compare(ctx, e.alice, d.Version.ID)
+	if _, err := e.svc.Activate(ctx, e.bob, d.Version.ID, cmp.DocHash); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("bob activates alice's version: %v", err)
+	}
+	if _, err := e.svc.Activate(ctx, e.alice, d.Version.ID, cmp.DocHash); err != nil {
+		t.Fatal(err)
+	}
+	if p, _, _ := e.svc.Plan(ctx, e.alice, d.Plan.ID); p.Name != "Second" {
+		t.Fatalf("plan name = %q", p.Name)
+	}
+}
+
+func TestSaveDraftRejectsAVersionOfAnotherPlan(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	a, err := e.svc.SaveDraft(ctx, e.alice, DraftInput{Doc: namedDoc("A"), Source: "mcp"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := e.svc.SaveDraft(ctx, e.alice, DraftInput{Doc: namedDoc("B"), Source: "mcp"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.svc.SaveDraft(ctx, e.alice, DraftInput{PlanID: b.Plan.ID, VersionID: a.Version.ID, Doc: namedDoc("A2"), Source: "mcp"}); !errors.Is(err, ErrVersionNotInPlan) {
+		t.Fatalf("plan_id of another plan: %v", err)
+	}
+	if v, _ := e.svc.Version(ctx, e.alice, a.Version.ID); !strings.Contains(string(v.Doc), `"A"`) {
+		t.Fatalf("the draft changed: %s", v.Doc)
+	}
+	if _, err := e.svc.SaveDraft(ctx, e.alice, DraftInput{PlanID: a.Plan.ID, VersionID: a.Version.ID, Doc: namedDoc("A2"), Source: "mcp"}); err != nil {
+		t.Fatalf("matching plan_id: %v", err)
+	}
+}
+
+// An archived plan is read-only until restored, from the web editor and from the AI alike.
+func TestArchivedPlansTakeNoNewVersions(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	d, err := e.svc.SaveDraft(ctx, e.alice, DraftInput{Doc: namedDoc("Old"), Source: "mcp"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := e.svc.Archive(ctx, e.alice, d.Plan.ID, true); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.svc.SaveDraft(ctx, e.alice, DraftInput{PlanID: d.Plan.ID, Doc: namedDoc("New"), Source: "mcp"}); !errors.Is(err, ErrArchived) {
+		t.Fatalf("new draft of an archived plan: %v", err)
+	}
+	if _, err := e.svc.SaveDraft(ctx, e.alice, DraftInput{VersionID: d.Version.ID, Doc: namedDoc("New"), Source: "mcp"}); !errors.Is(err, ErrArchived) {
+		t.Fatalf("replacing a draft of an archived plan: %v", err)
+	}
+	for _, status := range []string{SaveDraft, SaveActivate} {
+		if _, _, err := e.svc.Save(ctx, e.alice, d.Plan.ID, namedDoc("New"), status, "web", ""); !errors.Is(err, ErrArchived) {
+			t.Fatalf("saving an archived plan from the editor (%s): %v", status, err)
+		}
+	}
+	if _, vs, _ := e.svc.Plan(ctx, e.alice, d.Plan.ID); len(vs) != 1 || !strings.Contains(string(vs[0].Doc), "Old") {
+		t.Fatalf("versions = %+v", vs)
+	}
+	if err := e.svc.Archive(ctx, e.alice, d.Plan.ID, false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.svc.SaveDraft(ctx, e.alice, DraftInput{PlanID: d.Plan.ID, Doc: namedDoc("New"), Source: "mcp"}); err != nil {
+		t.Fatalf("restored plan: %v", err)
+	}
+}
+
+// A plan is named after its active version; until it has one, after its only draft.
+func TestReplacingTheOnlyDraftRenamesThePlan(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	d, err := e.svc.SaveDraft(ctx, e.alice, DraftInput{Doc: namedDoc("Working title"), Source: "mcp"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	r, err := e.svc.SaveDraft(ctx, e.alice, DraftInput{VersionID: d.Version.ID, Doc: namedDoc("Final title"), Source: "mcp"})
+	if err != nil || r.Plan.Name != "Final title" {
+		t.Fatalf("replaced draft plan = %+v, %v", r.Plan, err)
+	}
+	if p, _, _ := e.svc.Plan(ctx, e.alice, d.Plan.ID); p.Name != "Final title" {
+		t.Fatalf("stored plan name = %q", p.Name)
+	}
+
+	// With more than one version, drafts leave the name alone.
+	d2, err := e.svc.SaveDraft(ctx, e.alice, DraftInput{PlanID: d.Plan.ID, Doc: namedDoc("Other idea"), Source: "mcp"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.svc.SaveDraft(ctx, e.alice, DraftInput{VersionID: d2.Version.ID, Doc: namedDoc("Other idea b"), Source: "mcp"}); err != nil {
+		t.Fatal(err)
+	}
+	if p, _, _ := e.svc.Plan(ctx, e.alice, d.Plan.ID); p.Name != "Final title" {
+		t.Fatalf("a second draft renamed the plan: %q", p.Name)
 	}
 }
