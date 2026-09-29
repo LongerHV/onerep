@@ -153,6 +153,50 @@ try {
   const load = (await doc()).days[0].groups[0].exercises[0].sets[0].load;
   h.check("the corrected load is the one in the form", JSON.stringify(load) === '{"weight":60}', JSON.stringify(load));
 
+  // A per-week input that doesn't parse is flagged as you type, and stays
+  // flagged through other form changes while its text is still wrong.
+  await fresh();
+  const reps = `[data-per-week="root.days.0.groups.0.exercises.0.sets.0.reps"]`;
+  const repsBefore = (await doc()).days[0].groups[0].exercises[0].sets[0].reps;
+  const typeInto = (selector, value) => evaluate(`(() => { const el = document.querySelector(${JSON.stringify(selector)});
+    el.value = ${JSON.stringify(value)}; el.dispatchEvent(new Event('input', {bubbles: true})); })()`);
+  const repsMsg = () => evaluate(`(() => { const p = document.querySelector('${reps} p'); return p && !p.hidden ? p.textContent : ""; })()`);
+  await typeInto(`${reps} input:not([type=checkbox])`, "lots");
+  await h.waitFor(async () => /enter reps like/.test(await repsMsg()), "the reps error while typing").catch(() => {});
+  h.check("a bad per-week value is flagged as you type", /enter reps like/.test(await repsMsg()), await repsMsg());
+  h.check("the error says the plan keeps the old value", (await repsMsg()).includes(`the plan still has ${repsBefore}`), await repsMsg());
+  await evaluate(`(() => { window.__swapped = false;
+    document.getElementById("plan-preview").addEventListener("htmx:afterSettle", () => { window.__swapped = true; }, { once: true }); })()`);
+  await setInput(`#doc-form input[name="root[name]"]`, "Renamed plan");
+  await h.waitFor(() => evaluate("window.__swapped"), "the preview after another change").catch(() => {});
+  h.check("the error outlasts another form change", /enter reps like/.test(await repsMsg()) &&
+    (await evaluate(`document.querySelector('${reps} input:not([type=checkbox])').value`)) === "lots", await repsMsg());
+  h.check("the document keeps the old value", JSON.stringify((await doc()).days[0].groups[0].exercises[0].sets[0].reps) === JSON.stringify(repsBefore));
+  await typeInto(`${reps} input:not([type=checkbox])`, "6");
+  await h.waitFor(async () => (await repsMsg()) === "", "the reps error to clear").catch(() => {});
+  h.check("a corrected value clears the error", (await repsMsg()) === "", await repsMsg());
+
+  // Server markers stay put through a form change until a preview no longer reports them.
+  await fresh();
+  const restField = "[data-per-week='root.days.0.groups.0.rest_s']";
+  const restMsg = () => evaluate(`(() => { const p = document.querySelector("${restField} p"); return p && !p.hidden ? p.textContent : ""; })()`);
+  await setInput(`${restField} input:not([type=checkbox])`, "99999");
+  await h.waitFor(async () => (await restMsg()).length > 0, "the rest marker").catch(() => {});
+  await evaluate(`(() => { window.__swapped = false; window.__gaps = 0;
+    const sample = () => { const p = document.querySelector("${restField} p");
+      if (!p || p.hidden || !p.textContent) window.__gaps++;
+      if (!window.__swapped) requestAnimationFrame(sample); };
+    document.getElementById("plan-preview").addEventListener("htmx:afterSettle", () => { window.__swapped = true; }, { once: true });
+    requestAnimationFrame(sample);
+    const i = document.querySelector('#doc-form input[name="root[name]"]'); i.value = "Other name";
+    i.dispatchEvent(new Event("change", {bubbles: true})); })()`);
+  await h.waitFor(() => evaluate("window.__swapped"), "the preview after a name change").catch(() => {});
+  const gaps = await evaluate("window.__gaps");
+  h.check("server markers don't flicker on a form change", gaps === 0 && (await restMsg()).length > 0, `${gaps} frames without the marker`);
+  await setInput(`${restField} input:not([type=checkbox])`, "180");
+  await h.waitFor(async () => (await restMsg()) === "", "the rest marker to clear").catch(() => {});
+  h.check("a marker clears once the preview no longer reports it", (await restMsg()) === "", await restMsg());
+
   // The "vary by week" toggle names its field, and checkboxes are easy to tap on a phone.
   await send("Emulation.setDeviceMetricsOverride", { width: 390, height: 844, deviceScaleFactor: 2, mobile: true });
   await fresh();

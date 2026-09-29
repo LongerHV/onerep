@@ -54,6 +54,4 @@ Known issues, deferred on purpose: each was found in a milestone's final review 
 
 ## Plan form editor
 
-- **Per-week parse errors are fragile:** the "enter reps like…" message is hidden by the next form change while the bad text stays in the input (the document keeps the old value), and the check runs on `change`, not as you type. (`plan-form-theme.js`)
 - **Real exercise search.** The exercise select is a native select (type-ahead only), not the spec's "searchable select". The user accepted this for now (2026-09-26); add a search field later. (`definitions.slug` enum, `plan-form-theme.js`)
-- **Server warnings flicker after every form change.** json-editor's own validation on change hides the markers from `showValidationErrors` until the preview returns and `markProblems` puts them back (~0.5 s later), so the form shrinks and regrows; scroll anchoring keeps the page in place. Fix: re-apply the last problems on json-editor's change as well. (`static/js/plan-form.js`)
