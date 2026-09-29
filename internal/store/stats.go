@@ -118,8 +118,8 @@ type HardSet struct {
 	DoneAt time.Time
 }
 
-// hardSetsQuery is HardSets' query. The sets_user_done index covers it, so a
-// date range reads only that range, already in order.
+// hardSetsQuery is HardSets' query. It seeks the sets_user_done index, so a
+// date range reads only that range.
 const hardSetsQuery = `SELECT slug, done_at FROM sets
 	WHERE user_id = ? AND kind IN ('working', 'drop', 'amrap') AND (rpe IS NULL OR rpe >= 7)
 		AND deleted_at IS NULL AND done_at >= ? AND done_at < ?
