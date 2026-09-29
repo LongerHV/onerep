@@ -179,11 +179,8 @@ func EditorSchema(o EditorOptions) ([]byte, error) {
 }
 
 // isPerWeek reports whether a contract node is a per-week value: a oneOf with
-// an array branch, or a reference to the per-week seconds definition.
+// an array branch.
 func isPerWeek(m map[string]any) bool {
-	if m["$ref"] == "#/$defs/seconds" {
-		return true
-	}
 	branches, _ := m["oneOf"].([]any)
 	for _, b := range branches {
 		if bm, ok := b.(map[string]any); ok && bm["type"] == "array" {

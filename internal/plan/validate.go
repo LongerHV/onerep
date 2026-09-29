@@ -87,7 +87,8 @@ func Validate(raw []byte, lookup Lookup) (Doc, Problems) {
 	if ps := schemaProblems(raw); len(ps) > 0 {
 		return doc, capProblems(ps)
 	}
-	if err := json.Unmarshal(raw, &doc); err != nil {
+	doc, err := Decode(raw)
+	if err != nil {
 		return doc, Problems{{Pointer: "", Message: err.Error()}}
 	}
 	return doc, capProblems(semanticProblems(doc, lookup))
@@ -299,14 +300,39 @@ func rpeResolvable(line SetLine) bool {
 }
 
 // friendlier replaces library wording for rules people break most often.
+// e.SchemaURL is the schema holding the failed keyword.
 func friendlier(e *jsonschema.ValidationError) (string, bool) {
-	if _, ok := e.ErrorKind.(*kind.OneOf); !ok || !strings.HasSuffix(e.SchemaURL, "#/$defs/setLine") {
-		return "", false
+	in := func(def string) bool { return strings.HasSuffix(e.SchemaURL, "#/$defs/"+def) }
+	switch e.ErrorKind.(type) {
+	case *kind.OneOf:
+		if !in("setLine") {
+			return "", false
+		}
+		if len(e.Causes) == 0 { // both alternatives matched
+			return "give reps or duration_s, not both", true
+		}
+		return "give reps (or duration_s for timed sets)", true
+	case *kind.Pattern:
+		switch {
+		case in("reps/oneOf/1"):
+			return `expected a number of reps, a range like "6-10", or "AMRAP"`, true
+		case in("slug"):
+			return `use lowercase letters, digits and single hyphens, like "barbell-bench-press"`, true
+		}
+	case *kind.MultipleOf:
+		if in("rpe") {
+			return "RPE goes in steps of 0.5, like 7.5 or 8", true
+		}
+	case *kind.MaxProperties:
+		if in("load") {
+			return "give only one of weight, pct_tm, rpe or drop_pct", true
+		}
+	case *kind.MinProperties:
+		if in("load") {
+			return "give one of weight, pct_tm, rpe or drop_pct", true
+		}
 	}
-	if len(e.Causes) == 0 { // both alternatives matched
-		return "give reps or duration_s, not both", true
-	}
-	return "give reps (or duration_s for timed sets)", true
+	return "", false
 }
 
 // MaxTotalSets bounds the sets of a whole plan (a year of 5 days a week with

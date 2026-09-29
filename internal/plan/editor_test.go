@@ -56,8 +56,8 @@ func TestEditorOverlayPointsIntoContract(t *testing.T) {
 	}
 }
 
-// Every per-week value in the contract (a oneOf with an array branch, or a
-// $ref to seconds) is rewritten, and every rewrite points at one.
+// Every per-week value in the contract (a oneOf with an array branch) is
+// rewritten, and every rewrite points at one.
 func TestPerWeekFieldsAreAllRewritten(t *testing.T) {
 	found := map[string]bool{}
 	var walk func(ptr string, v any)
@@ -74,7 +74,6 @@ func TestPerWeekFieldsAreAllRewritten(t *testing.T) {
 		}
 	}
 	walk("", contract(t))
-	delete(found, "/$defs/seconds") // the definition itself, not a use of it
 	for ptr := range found {
 		if _, ok := perWeekKinds[ptr]; !ok {
 			t.Errorf("per-week value %s has no kind in perWeekKinds", ptr)

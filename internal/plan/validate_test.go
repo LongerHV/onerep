@@ -81,14 +81,20 @@ func TestSchemaErrorsPointAtTheProblem(t *testing.T) {
 	}{
 		{"missing name", `{"weeks": 1, "days": []}`, "", "missing property 'name'"},
 		{"zero weeks", `{"name": "x", "weeks": 0, "days": [{"name": "A", "groups": []}]}`, "/weeks", "minimum"},
-		{"bad reps string", string(withSet(`{"count": 3, "reps": "5-"}`)), setPtr + "/reps", "does not match pattern"},
-		{"two load keys", string(withSet(`{"count": 3, "reps": 5, "load": {"weight": 10, "rpe": 8}}`)), setPtr + "/load", "maxProperties"},
+		{"bad reps string", string(withSet(`{"count": 3, "reps": "5-"}`)), setPtr + "/reps", `expected a number of reps, a range like "6-10", or "AMRAP"`},
+		{"bad reps string in a per-week array", string(withSet(`{"count": 3, "reps": [5, "amrap"]}`)), setPtr + "/reps/1", `expected a number of reps, a range like "6-10", or "AMRAP"`},
+		{"two load keys", string(withSet(`{"count": 3, "reps": 5, "load": {"weight": 10, "rpe": 8}}`)), setPtr + "/load", "give only one of weight, pct_tm, rpe or drop_pct"},
+		{"empty load", string(withSet(`{"count": 3, "reps": 5, "load": {}}`)), setPtr + "/load", "give one of weight, pct_tm, rpe or drop_pct"},
+		{"zero duration", string(withSet(`{"count": 3, "duration_s": 0}`)), setPtr + "/duration_s", "minimum"},
+		{"zero duration in a per-week array", string(withSet(`{"count": 3, "duration_s": [30, 0]}`)), setPtr + "/duration_s/1", "minimum"},
 		{"reps and duration", string(withSet(`{"count": 3, "reps": 5, "duration_s": 30}`)), setPtr, "give reps or duration_s, not both"},
 		{"neither reps nor duration", string(withSet(`{"count": 3}`)), setPtr, "give reps (or duration_s for timed sets)"},
 		{"unknown field", string(withSet(`{"count": 3, "reps": 5, "tempo": "3010"}`)), setPtr, "'tempo' not allowed"},
 		{"wrong type inside a per-week array", string(withSet(`{"count": [3, "x"], "reps": 5}`)), setPtr + "/count/1", "expected integer or null"},
-		{"rpe off the half steps", string(withSet(`{"count": 3, "reps": 5, "load": {"rpe": 8.25}}`)), setPtr + "/load/rpe", "multipleOf"},
-		{"bad slug", `{"name": "x", "weeks": 1, "days": [{"name": "A", "groups": [{"exercises": [{"slug": "Pull Up", "sets": [{"count": 1, "reps": 1}]}]}]}]}`, "/days/0/groups/0/exercises/0/slug", "does not match pattern"},
+		{"rpe off the half steps", string(withSet(`{"count": 3, "reps": 5, "load": {"rpe": 8.25}}`)), setPtr + "/load/rpe", "RPE goes in steps of 0.5, like 7.5 or 8"},
+		{"informational rpe off the half steps", string(withSet(`{"count": 3, "reps": 5, "rpe": [8, 7.2]}`)), setPtr + "/rpe/1", "RPE goes in steps of 0.5, like 7.5 or 8"},
+		{"bad slug", `{"name": "x", "weeks": 1, "days": [{"name": "A", "groups": [{"exercises": [{"slug": "Pull Up", "sets": [{"count": 1, "reps": 1}]}]}]}]}`, "/days/0/groups/0/exercises/0/slug", `use lowercase letters, digits and single hyphens, like "barbell-bench-press"`},
+		{"bad alternative slug", `{"name": "x", "weeks": 1, "days": [{"name": "A", "groups": [{"exercises": [{"slug": "pull-up", "alternatives": ["chin_up"], "sets": [{"count": 1, "reps": 1}]}]}]}]}`, "/days/0/groups/0/exercises/0/alternatives/0", "use lowercase letters, digits and single hyphens"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -189,6 +195,49 @@ func TestProblemListIsCapped(t *testing.T) {
 	_, ps := Validate([]byte(doc), testCatalog)
 	if len(ps) != MaxProblems+1 || !strings.Contains(ps[MaxProblems].Message, "first 50") {
 		t.Fatalf("got %d problems, last %+v", len(ps), ps[len(ps)-1])
+	}
+}
+
+// JSON has one number type: whole numbers written as floats pass the schema's
+// "integer" and must decode like plain integers.
+func TestWholeNumbersWrittenAsFloatsDecode(t *testing.T) {
+	raw := []byte(`{"name": "x", "weeks": 2.0, "days": [{"name": "A", "only_weeks": [1.0, 2e0], "groups": [
+		{"rest_s": [90.0, 1.2e2], "exercises": [{"slug": "pull-up", "sets": [
+			{"count": 3.0, "reps": 5.0, "load": {"weight": 60.0}},
+			{"count": [1e0, null], "reps": [8.00, 1E1]},
+			{"count": 2, "duration_s": 3e1}
+		]}]}]}]}`)
+	doc, ps := Validate(raw, testCatalog)
+	if ps.HasErrors() {
+		t.Fatalf("unexpected errors: %+v", ps)
+	}
+	if doc.Weeks != 2 || len(doc.Days[0].OnlyWeeks) != 2 || doc.Days[0].OnlyWeeks[1] != 2 {
+		t.Fatalf("weeks = %d, only_weeks = %v", doc.Weeks, doc.Days[0].OnlyWeeks)
+	}
+	g := doc.Days[0].Groups[0]
+	if g.RestS.At(2) != 120 {
+		t.Fatalf("rest_s = %+v", g.RestS)
+	}
+	sets := g.Exercises[0].Sets
+	if *sets[0].Count.At(1) != 3 || sets[0].Reps.At(1) != (Reps{Min: 5, Max: 5}) || sets[0].Load.Weight.At(1) != 60 {
+		t.Fatalf("first line = %+v", sets[0])
+	}
+	if *sets[1].Count.At(1) != 1 || sets[1].Count.At(2) != nil || sets[1].Reps.At(2) != (Reps{Min: 10, Max: 10}) {
+		t.Fatalf("second line = %+v", sets[1])
+	}
+	if sets[2].DurationS.At(1) != 30 {
+		t.Fatalf("third line = %+v", sets[2])
+	}
+	// Stored documents are decoded the same way.
+	if d, err := Decode(raw); err != nil || d.Weeks != 2 {
+		t.Fatalf("Decode: weeks %d, %v", d.Weeks, err)
+	}
+}
+
+func TestFractionalIntegersAreSchemaErrors(t *testing.T) {
+	_, ps := Validate(withSet(`{"count": 2.5, "reps": 5}`), testCatalog)
+	if !ps.HasErrors() || len(problemsAt(ps, "/days/0/groups/0/exercises/0/sets/0/count")) == 0 {
+		t.Fatalf("problems = %+v", ps)
 	}
 }
 
