@@ -126,6 +126,44 @@ try {
   await evaluate(`(() => { const s = document.querySelector('${alts} select'); s.value = "barbell-back-squat"; s.dispatchEvent(new Event("change", {bubbles: true})); })()`);
   await h.waitFor(async () => ((await doc()).days[0].groups[0].exercises[0].alternatives || []).length === 2, "the added alternative").catch(() => {});
   h.check("alternatives keep their order", JSON.stringify((await doc()).days[0].groups[0].exercises[0].alternatives) === '["dumbbell-bench-press","barbell-back-squat"]');
+
+  // Picking from a dropdown keeps the page where it is, after the preview refreshes too.
+  await fresh();
+  const rpe = `[data-per-week="root.days.0.groups.1.exercises.0.sets.0.rpe"] select`;
+  await evaluate(`document.querySelector('${rpe}').scrollIntoView({ block: "center" })`);
+  const scrolled = await evaluate("window.scrollY");
+  await evaluate(`(() => { window.__swapped = false;
+    document.getElementById("plan-preview").addEventListener("htmx:afterSettle", () => { window.__swapped = true; }, { once: true });
+    const s = document.querySelector('${rpe}'); s.value = "9"; s.dispatchEvent(new Event("change", {bubbles: true})); })()`);
+  await h.waitFor(() => evaluate("window.__swapped"), "the preview after a select change").catch(() => {});
+  // Warnings re-marked after the swap move the page briefly; scroll anchoring settles it.
+  await h.waitFor(async () => (await evaluate("window.scrollY")) === scrolled, "the scroll position", 3000).catch(() => {});
+  const after = await evaluate("window.scrollY");
+  h.check("a select change keeps the scroll position", scrolled > 0 && after === scrolled, `before ${scrolled}, after ${after}`);
+
+  // A refused document, once corrected, opens in the form.
+  await fresh();
+  await toJSONAndBack(`(d) => { d.days[0].groups[0].exercises[0].sets[0].load = { pct_tm: 0.5, weight: 60 }; }`);
+  h.check("a two-key load is refused", await evaluate(`!document.querySelector('[data-view-note]').hidden`));
+  await evaluate(`(() => { const t = document.getElementById('doc'); const d = JSON.parse(t.value); d.days[0].groups[0].exercises[0].sets[0].load = { weight: 60 }; t.value = JSON.stringify(d); })()`);
+  await evaluate(`document.querySelector('[data-view="form"]').click()`);
+  h.check("a corrected document opens in the form",
+    await evaluate(`!document.getElementById('doc-form').hidden && document.querySelector('[data-view-note]').hidden`),
+    await evaluate(`document.querySelector('[data-view-note]').textContent`));
+  const load = (await doc()).days[0].groups[0].exercises[0].sets[0].load;
+  h.check("the corrected load is the one in the form", JSON.stringify(load) === '{"weight":60}', JSON.stringify(load));
+
+  // The "vary by week" toggle names its field, and checkboxes are easy to tap on a phone.
+  await send("Emulation.setDeviceMetricsOverride", { width: 390, height: 844, deviceScaleFactor: 2, mobile: true });
+  await fresh();
+  h.check("the vary toggle names its field", await evaluate(`(() => {
+    const c = document.querySelector('[data-per-week="root.days.0.groups.0.rest_s"]');
+    const name = c.querySelector('input[type=checkbox]').getAttribute('aria-label') || '';
+    return /vary/i.test(name) && name.includes(c.querySelector('label').textContent.trim()); })()`));
+  const small = await evaluate(`[...document.querySelectorAll('#doc-form input[type=checkbox]')]
+    .map((b) => b.closest('label').getBoundingClientRect()).filter((r) => r.width > 0 && (r.height < 40 || r.width < 40)).length`);
+  h.check("checkboxes have a 40px tap area on phones", small === 0, `${small} too small`);
+  await send("Emulation.clearDeviceMetricsOverride");
 } catch (err) {
   h.check("scenario ran to the end", false, err.stack || String(err));
 } finally {

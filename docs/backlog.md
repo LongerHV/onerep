@@ -83,12 +83,6 @@ Known issues, deferred on purpose: each was found in a milestone's final review 
 
 ## Plan form editor
 
-- **A refused JSON → Form switch can leave stale state.** After loading a document the form can't show (e.g. a two-key `load`), the form keeps part of it, so a corrected document can still be refused until the page is reloaded. Fix: reset the editor (`setValue` of an empty plan) before loading the text. (`static/js/plan-form.js`, loadForm)
-- **`only_weeks` order counts as a change:** `[3,1]` is refused because the week set sorts it. Fix: sort `only_weeks` in `sameDoc`'s normalisation. (`plan-form-core.js`)
 - **Per-week parse errors are fragile:** the "enter reps like…" message is hidden by the next form change while the bad text stays in the input (the document keeps the old value), and the check runs on `change`, not as you type. (`plan-form-theme.js`)
-- **The `loading` guard in `loadForm` does nothing** (json-editor's change fires a frame later); harmless because of the view check, but misleading. (`plan-form.js`)
-- **Small touch targets:** the week-set and "vary by week" checkboxes are below 40px on phones. (`plan-form-theme.js`, `cls.check`)
-- **The "vary by week" toggle doesn't name its field** for screen readers. (`plan-form-theme.js`)
 - **Real exercise search.** The exercise select is a native select (type-ahead only), not the spec's "searchable select". The user accepted this for now (2026-09-26); add a search field later. (`definitions.slug` enum, `plan-form-theme.js`)
-- **The refusal note always blames "keys it doesn't know",** even for an unknown slug or a two-key load. Fix: "values the form can't show". (`plan-form.js`)
-- **Picking a dropdown item scrolls the page to the top.** Likely cause: every form change refreshes the preview, and the textarea's preview request inherits the body's `hx-swap="innerHTML show:window:top"`; dropdowns commit at once, so the jump happens mid-edit. Fix: `hx-swap="innerHTML show:none"` on the `#doc` textarea, plus an e2e check that `scrollY` survives a select change. (`views/plans.templ`, `views/layout.templ`)
+- **Server warnings flicker after every form change.** json-editor's own validation on change hides the markers from `showValidationErrors` until the preview returns and `markProblems` puts them back (~0.5 s later), so the form shrinks and regrows; scroll anchoring keeps the page in place. Fix: re-apply the last problems on json-editor's change as well. (`static/js/plan-form.js`)

@@ -141,6 +141,7 @@ templ PlanEditorPage(p Page, e PlanEditor) {
 				hx-post="/plans/preview"
 				hx-trigger="load, keyup changed delay:500ms, doc-changed delay:500ms"
 				hx-target="#plan-preview"
+				hx-swap="innerHTML show:none"
 				hx-sync="this:replace"
 			>{ e.Doc }</textarea>
 			<div id="doc-form" hidden></div>

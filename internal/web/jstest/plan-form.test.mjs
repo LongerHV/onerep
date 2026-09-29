@@ -158,6 +158,13 @@ test("a uniform per-week array the length of the plan is the same plan as one va
   assert.ok(!f.sameDoc(plan([120, 90, 120, 120]), plan(120), "kg"));
 });
 
+test("only_weeks order is not a change", () => {
+  const plan = (weeks) => ({ name: "P", unit: "kg", weeks: 4, days: [{ name: "D", only_weeks: weeks, groups: [] }] });
+  assert.ok(f.sameDoc(plan([3, 1]), plan([1, 3]), "kg"));
+  assert.ok(!f.sameDoc(plan([3, 1]), plan([1, 2]), "kg"));
+  assert.ok(!f.sameDoc(plan([1, 1, 3]), plan([1, 3]), "kg"), "duplicates the form drops are still a change");
+});
+
 test("an alternatives list keeps its order", () => {
   assert.deepEqual(f.listAdd(["b", "a"], "c"), ["b", "a", "c"]);
   assert.deepEqual(f.listAdd(["b", "a"], "a"), ["b", "a"], "no duplicates");
