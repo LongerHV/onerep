@@ -19,8 +19,9 @@ type Session struct {
 	Snapshot      []byte // plan.ExpandedDay as JSON
 	StartedAt     time.Time
 	FinishedAt    *time.Time
-	Notes         string
-	UpdatedAt     time.Time
+	Notes          string
+	NotesUpdatedAt *time.Time // last notes edit, nil before the first
+	UpdatedAt      time.Time
 }
 
 // Set is a logged set. Pointer fields are nil when not recorded.
@@ -55,14 +56,15 @@ const (
 )
 
 const sessionColumns = `id, user_id, coalesce(plan_id, ''), coalesce(plan_version_id, ''), week, day, name, snapshot,
-	started_at, finished_at, notes, updated_at`
+	started_at, finished_at, notes, notes_updated_at, updated_at`
 
-func scanSession(row interface{ Scan(...any) error }) (Session, error) {
+// scanSession scans sessionColumns followed by extra columns into extra.
+func scanSession(row interface{ Scan(...any) error }, extra ...any) (Session, error) {
 	var s Session
 	var snapshot, started, updated string
-	var finished sql.NullString
-	err := row.Scan(&s.ID, &s.UserID, &s.PlanID, &s.PlanVersionID, &s.Week, &s.Day, &s.Name, &snapshot,
-		&started, &finished, &s.Notes, &updated)
+	var finished, notesUpdated sql.NullString
+	err := row.Scan(append([]any{&s.ID, &s.UserID, &s.PlanID, &s.PlanVersionID, &s.Week, &s.Day, &s.Name, &snapshot,
+		&started, &finished, &s.Notes, &notesUpdated, &updated}, extra...)...)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Session{}, ErrNotFound
 	}
@@ -74,6 +76,9 @@ func scanSession(row interface{ Scan(...any) error }) (Session, error) {
 		return Session{}, err
 	}
 	if s.FinishedAt, err = parseNullTime(finished); err != nil {
+		return Session{}, err
+	}
+	if s.NotesUpdatedAt, err = parseNullTime(notesUpdated); err != nil {
 		return Session{}, err
 	}
 	s.UpdatedAt, err = parseTime(updated)
@@ -143,20 +148,8 @@ func (db *DB) ListSessions(ctx context.Context, userID string, limit, offset int
 	var out []SessionSummary
 	for rows.Next() {
 		var sum SessionSummary
-		var snapshot, started, updated string
-		var finished sql.NullString
-		if err := rows.Scan(&sum.ID, &sum.UserID, &sum.PlanID, &sum.PlanVersionID, &sum.Week, &sum.Day, &sum.Name,
-			&snapshot, &started, &finished, &sum.Notes, &updated, &sum.Sets); err != nil {
-			return nil, err
-		}
-		sum.Snapshot = []byte(snapshot)
-		if sum.StartedAt, err = parseTime(started); err != nil {
-			return nil, err
-		}
-		if sum.FinishedAt, err = parseNullTime(finished); err != nil {
-			return nil, err
-		}
-		if sum.UpdatedAt, err = parseTime(updated); err != nil {
+		var err error
+		if sum.Session, err = scanSession(rows, &sum.Sets); err != nil {
 			return nil, err
 		}
 		out = append(out, sum)
@@ -356,14 +349,17 @@ func (db *DB) DeleteSet(ctx context.Context, userID, sessionID, setID string, at
 	})
 }
 
-// SetSessionNotes replaces the notes when at is newer than the last change.
+// SetSessionNotes replaces the notes when at is newer than the last notes
+// edit. Other changes to the session don't count: they are stamped by the
+// server's clock, which a phone's clock may be behind.
 func (db *DB) SetSessionNotes(ctx context.Context, userID, sessionID, notes string, at time.Time, opID string) (Outcome, error) {
 	return db.recordOp(ctx, userID, opID, func(tx *sql.Tx) (Outcome, error) {
 		if err := ownSession(ctx, tx, userID, sessionID); err != nil {
 			return "", err
 		}
-		res, err := tx.ExecContext(ctx, `UPDATE sessions SET notes = ?, updated_at = ? WHERE id = ? AND updated_at < ?`,
-			notes, formatTime(at), sessionID, formatTime(at))
+		res, err := tx.ExecContext(ctx, `UPDATE sessions SET notes = ?, notes_updated_at = ?, updated_at = ?
+			WHERE id = ? AND (notes_updated_at IS NULL OR notes_updated_at < ?)`,
+			notes, formatTime(at), formatTime(time.Now()), sessionID, formatTime(at))
 		if err != nil {
 			return "", err
 		}
@@ -425,20 +421,9 @@ func (db *DB) SearchSessions(ctx context.Context, userID string, f SessionFilter
 	var out []SessionSummary
 	for rows.Next() {
 		var sum SessionSummary
-		var snapshot, started, updated, slugs string
-		var finished sql.NullString
-		if err := rows.Scan(&sum.ID, &sum.UserID, &sum.PlanID, &sum.PlanVersionID, &sum.Week, &sum.Day, &sum.Name,
-			&snapshot, &started, &finished, &sum.Notes, &updated, &sum.Sets, &slugs); err != nil {
-			return nil, err
-		}
-		sum.Snapshot = []byte(snapshot)
-		if sum.StartedAt, err = parseTime(started); err != nil {
-			return nil, err
-		}
-		if sum.FinishedAt, err = parseNullTime(finished); err != nil {
-			return nil, err
-		}
-		if sum.UpdatedAt, err = parseTime(updated); err != nil {
+		var slugs string
+		var err error
+		if sum.Session, err = scanSession(rows, &sum.Sets, &slugs); err != nil {
 			return nil, err
 		}
 		if slugs != "" {

@@ -277,6 +277,37 @@ func TestHistoryEditBeatsClockAhead(t *testing.T) {
 	}
 }
 
+// Notes from a phone whose clock is behind the server's are saved, and a
+// later history edit beats notes stamped a few minutes ahead.
+func TestNotesAcrossClocks(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	sess, _ := e.svc.StartAdHoc(ctx, e.alice)
+	notes := func(text string, at time.Time) string {
+		res, err := e.svc.ApplyOps(ctx, e.alice, []Op{{OpID: opID(), Op: OpEditNotes,
+			Payload: payload(map[string]any{"session_id": sess.ID, "notes": text, "updated_at": at})}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return res[0].Status
+	}
+	if st := notes("slow phone", time.Now().UTC().Add(-10*time.Minute)); st != "applied" {
+		t.Fatalf("slow clock notes: %s", st)
+	}
+	if got, _ := e.db.SessionByID(ctx, e.alice.ID, sess.ID); got.Notes != "slow phone" {
+		t.Fatalf("notes = %q", got.Notes)
+	}
+	if st := notes("fast phone", time.Now().UTC().Add(4*time.Minute)); st != "applied" {
+		t.Fatalf("fast clock notes: %s", st)
+	}
+	if err := e.svc.SetNotes(ctx, e.alice, sess.ID, "from history"); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := e.db.SessionByID(ctx, e.alice.ID, sess.ID); got.Notes != "from history" {
+		t.Fatalf("history notes lost: %q", got.Notes)
+	}
+}
+
 func TestBootstrap(t *testing.T) {
 	e := newEnv(t)
 	ctx := context.Background()
