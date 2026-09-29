@@ -277,6 +277,22 @@ func TestHistoryEditBeatsClockAhead(t *testing.T) {
 	}
 }
 
+// A bodyweight set saved without added load stores 0 kg, as the companion
+// does, so it counts toward PRs.
+func TestBodyweightSetWithoutLoadIsZero(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	sess, _ := e.svc.StartAdHoc(ctx, e.alice)
+	reps := 8
+	in := SetInput{ID: "01900000-0000-7000-8000-0000000000f1", SessionID: sess.ID, Slug: "pull-up", Kind: "working", Reps: &reps}
+	if err := e.svc.SaveSet(ctx, e.alice, in); err != nil {
+		t.Fatal(err)
+	}
+	if _, sets, _ := e.svc.Session(ctx, e.alice, sess.ID); len(sets) != 1 || sets[0].WeightKg == nil || *sets[0].WeightKg != 0 {
+		t.Fatalf("bodyweight set weight = %v, want 0", sets[0].WeightKg)
+	}
+}
+
 // Notes from a phone whose clock is behind the server's are saved, and a
 // later history edit beats notes stamped a few minutes ahead.
 func TestNotesAcrossClocks(t *testing.T) {

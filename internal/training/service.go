@@ -202,6 +202,10 @@ func (s *Service) toStore(ctx context.Context, user store.User, in SetInput) (st
 	if len(in.Prescribed) > 0 && string(in.Prescribed) != "null" {
 		set.Prescribed = []byte(in.Prescribed)
 	}
+	if ex.Measurement == "bw_reps" && set.WeightKg == nil {
+		zero := 0.0 // no added load, as the companion records it, so the set counts toward PRs
+		set.WeightKg = &zero
+	}
 	if ex.Measurement == "weight_reps" && in.WeightKg != nil && in.Reps != nil {
 		rpe := 0.0
 		if in.RPE != nil {
