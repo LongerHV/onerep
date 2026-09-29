@@ -61,7 +61,6 @@ Known issues, deferred on purpose: each was found in a milestone's final review 
 ## MCP
 
 - **A draft can change between review and activation.** If the AI replaces a draft while the user has its compare page open, Activate takes the new document. `Service.Activate` also reads the doc outside its transaction. Fix: post a hash of the rendered doc and refuse on mismatch. (`internal/plan/service.go`, compare page)
-- **`list_sessions` exercise order relies on `group_concat` over an ordered subquery,** which SQLite doesn't guarantee. Fix: `group_concat(slug, ',' ORDER BY …)` (SQLite ≥ 3.44). (`internal/store/sessions.go`, SearchSessions)
 - **`save_plan_draft` loose ends:** `plan_id` is ignored when `version_id` is given (even if it names another plan); archived plans accept drafts; replacing the only draft of a draft-only plan doesn't rename the plan.
 - **Test gap:** `TestMCPIsMountedWithoutCookiesOrCSRF` sends no session cookie (correct by construction, since `/mcp` is outside the CSRF group).
 

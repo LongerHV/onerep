@@ -412,9 +412,9 @@ func (db *DB) SearchSessions(ctx context.Context, userID string, f SessionFilter
 	}
 	rows, err := db.read.QueryContext(ctx, `SELECT `+sessionColumns+`,
 		(SELECT count(*) FROM sets WHERE sets.session_id = sessions.id AND deleted_at IS NULL),
-		coalesce((SELECT group_concat(slug, ',') FROM (SELECT slug FROM sets
-			WHERE sets.session_id = sessions.id AND deleted_at IS NULL
-			GROUP BY slug ORDER BY min(group_pos), min(exercise_pos), min(done_at))), '')
+		coalesce((SELECT group_concat(slug, ',' ORDER BY g, e, d) FROM (
+			SELECT slug, min(group_pos) AS g, min(exercise_pos) AS e, min(done_at) AS d FROM sets
+			WHERE sets.session_id = sessions.id AND deleted_at IS NULL GROUP BY slug)), '')
 		FROM sessions WHERE user_id = ? AND started_at >= ? AND started_at < ?
 			AND (? = '' OR EXISTS (SELECT 1 FROM sets WHERE sets.session_id = sessions.id AND slug = ? AND deleted_at IS NULL))
 		ORDER BY started_at DESC, id DESC LIMIT ?`, userID, from, to, f.Slug, f.Slug, f.Limit)
