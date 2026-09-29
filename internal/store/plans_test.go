@@ -29,7 +29,7 @@ func TestPlanVersions(t *testing.T) {
 		t.Fatal("a draft must not replace the active version")
 	}
 
-	if err := db.ActivateVersion(ctx, alice.ID, v2.ID, "PPL v2"); err != nil {
+	if err := db.ActivateVersion(ctx, alice.ID, v2.ID, named("PPL v2")); err != nil {
 		t.Fatal(err)
 	}
 	if got, _ := db.PlanByID(ctx, alice.ID, p.ID); got.Name != "PPL v2" {
@@ -50,7 +50,7 @@ func TestPlanVersions(t *testing.T) {
 	}
 
 	// Rolling back to an older version is allowed.
-	if err := db.ActivateVersion(ctx, alice.ID, v1.ID, "PPL"); err != nil {
+	if err := db.ActivateVersion(ctx, alice.ID, v1.ID, named("PPL")); err != nil {
 		t.Fatal(err)
 	}
 	if active, _ := db.ActivePlanVersion(ctx, alice.ID, p.ID); active.ID != v1.ID {
@@ -64,7 +64,7 @@ func TestPlanVersions(t *testing.T) {
 	if _, err := db.SavePlanVersion(ctx, bob.ID, p.ID, "x", []byte(`{}`), PlanDraft, "web", ""); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("bob saves into alice's plan: %v", err)
 	}
-	if err := db.ActivateVersion(ctx, bob.ID, v2.ID, "x"); !errors.Is(err, ErrNotFound) {
+	if err := db.ActivateVersion(ctx, bob.ID, v2.ID, named("x")); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("bob activates alice's version: %v", err)
 	}
 	if vs, _ := db.PlanVersions(ctx, bob.ID, p.ID); len(vs) != 0 {
@@ -131,17 +131,68 @@ func TestUpdateDraftVersion(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got, err := db.UpdateDraftVersion(ctx, u.ID, draft.ID, []byte(`{"v":3}`), "mcp", "tweaked")
+	got, err := db.UpdateDraftVersion(ctx, u.ID, draft.ID, "P3", []byte(`{"v":3}`), "mcp", "tweaked")
 	if err != nil || string(got.Doc) != `{"v":3}` || got.Source != "mcp" || got.Note != "tweaked" || got.Version != draft.Version || got.Status != PlanDraft {
 		t.Fatalf("updated = %+v, %v", got, err)
 	}
-	if _, err := db.UpdateDraftVersion(ctx, u.ID, active.ID, []byte(`{}`), "mcp", ""); !errors.Is(err, ErrNotDraft) {
+	if _, err := db.UpdateDraftVersion(ctx, u.ID, active.ID, "x", []byte(`{}`), "mcp", ""); !errors.Is(err, ErrNotDraft) {
 		t.Fatalf("updating the active version: %v", err)
 	}
 	if v, _ := db.PlanVersionByID(ctx, u.ID, active.ID); string(v.Doc) != `{"v":1}` {
 		t.Fatalf("active version changed: %s", v.Doc)
 	}
-	if _, err := db.UpdateDraftVersion(ctx, other.ID, draft.ID, []byte(`{}`), "mcp", ""); !errors.Is(err, ErrNotFound) {
+	if _, err := db.UpdateDraftVersion(ctx, other.ID, draft.ID, "x", []byte(`{}`), "mcp", ""); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("another user's draft: %v", err)
 	}
+	if got, _ := db.PlanByID(ctx, u.ID, p.ID); got.Name != "P" {
+		t.Fatalf("a draft of a plan with an active version renamed it: %q", got.Name)
+	}
+}
+
+// A plan with a single draft is named after it, so replacing that draft renames the plan.
+func TestUpdateOnlyDraftRenamesPlan(t *testing.T) {
+	db := newTestDB(t)
+	ctx := context.Background()
+	u := newUser(t, db, "u")
+	p, draft, err := db.CreatePlan(ctx, u.ID, "Working", []byte(`{"v":1}`), PlanDraft, "mcp", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.UpdateDraftVersion(ctx, u.ID, draft.ID, "Final", []byte(`{"v":2}`), "mcp", ""); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := db.PlanByID(ctx, u.ID, p.ID); got.Name != "Final" {
+		t.Fatalf("plan name = %q", got.Name)
+	}
+}
+
+// ActivateVersion hands the version's document, read in its transaction, to
+// check; an error from check leaves everything as it was.
+func TestActivateVersionCheck(t *testing.T) {
+	db := newTestDB(t)
+	ctx := context.Background()
+	u := newUser(t, db, "u")
+	p, draft, err := db.CreatePlan(ctx, u.ID, "P", []byte(`{"v":1}`), PlanDraft, "mcp", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	refuse := errors.New("refused")
+	var seen string
+	err = db.ActivateVersion(ctx, u.ID, draft.ID, func(doc []byte) (string, error) {
+		seen = string(doc)
+		return "", refuse
+	})
+	if !errors.Is(err, refuse) || seen != `{"v":1}` {
+		t.Fatalf("err = %v, check saw %q", err, seen)
+	}
+	if v, _ := db.PlanVersionByID(ctx, u.ID, draft.ID); v.Status != PlanDraft {
+		t.Fatalf("refused activation: %+v", v)
+	}
+	if got, _ := db.PlanByID(ctx, u.ID, p.ID); got.Name != "P" {
+		t.Fatalf("refused activation renamed the plan: %q", got.Name)
+	}
+}
+
+func named(name string) func([]byte) (string, error) {
+	return func([]byte) (string, error) { return name, nil }
 }

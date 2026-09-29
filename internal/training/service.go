@@ -29,7 +29,7 @@ type Store interface {
 	SessionSets(ctx context.Context, userID, sessionID string) ([]store.Set, error)
 	LastSets(ctx context.Context, userID, slug, excludeSessionID string) ([]store.Set, error)
 	BestE1RM(ctx context.Context, userID, slug string, since time.Time) (*float64, error)
-	RepMaxes(ctx context.Context, userID, slug, excludeSessionID string) ([]store.RepMax, error)
+	RepMaxes(ctx context.Context, userID, slug, beforeSessionID string) ([]store.RepMax, error)
 	UpsertSet(ctx context.Context, userID string, s store.Set, opID string) (store.Outcome, error)
 	DeleteSet(ctx context.Context, userID, sessionID, setID string, at time.Time, opID string) (store.Outcome, error)
 	SetSessionNotes(ctx context.Context, userID, sessionID, notes string, at time.Time, opID string) (store.Outcome, error)
@@ -201,6 +201,10 @@ func (s *Service) toStore(ctx context.Context, user store.User, in SetInput) (st
 	}
 	if len(in.Prescribed) > 0 && string(in.Prescribed) != "null" {
 		set.Prescribed = []byte(in.Prescribed)
+	}
+	if ex.Measurement == "bw_reps" && set.WeightKg == nil {
+		zero := 0.0 // no added load, as the companion records it, so the set counts toward PRs
+		set.WeightKg = &zero
 	}
 	if ex.Measurement == "weight_reps" && in.WeightKg != nil && in.Reps != nil {
 		rpe := 0.0

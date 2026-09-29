@@ -21,13 +21,15 @@ type RepMax struct {
 }
 
 // RepMaxes returns the best weight per rep count for slug, lowest reps first,
-// ignoring sets of excludeSessionID ("" excludes nothing).
-func (db *DB) RepMaxes(ctx context.Context, userID, slug, excludeSessionID string) ([]RepMax, error) {
+// counting all sets when beforeSessionID is "", otherwise only the sets of other
+// sessions done before that session started (none if it isn't the user's).
+func (db *DB) RepMaxes(ctx context.Context, userID, slug, beforeSessionID string) ([]RepMax, error) {
 	rows, err := db.read.QueryContext(ctx, `SELECT reps, weight_kg, done_at, session_id FROM (
 		SELECT reps, weight_kg, done_at, session_id,
 			row_number() OVER (PARTITION BY reps ORDER BY weight_kg DESC, done_at, id) AS rank
-		FROM sets WHERE user_id = ? AND slug = ? AND session_id != ? AND `+prKinds+`
-	) WHERE rank = 1 ORDER BY reps`, userID, slug, excludeSessionID)
+		FROM sets WHERE user_id = ?1 AND slug = ?2 AND `+prKinds+` AND (?3 = '' OR (session_id != ?3 AND done_at <
+			coalesce((SELECT started_at FROM sessions WHERE id = ?3 AND user_id = sets.user_id), '')))
+	) WHERE rank = 1 ORDER BY reps`, userID, slug, beforeSessionID)
 	if err != nil {
 		return nil, err
 	}

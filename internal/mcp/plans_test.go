@@ -62,7 +62,11 @@ func TestPlanTools(t *testing.T) {
 	}
 
 	// The user activates it in the web UI; the AI then can't overwrite it.
-	if _, err := e.Plans().Activate(ctx, e.alice, draft.VersionID); err != nil {
+	v, err := e.Plans().Version(ctx, e.alice, draft.VersionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.Plans().Activate(ctx, e.alice, draft.VersionID, plan.DocHash(v.Doc)); err != nil {
 		t.Fatal(err)
 	}
 	if msg := call(t, cs, "save_plan_draft", map[string]any{"doc": planDoc, "version_id": draft.VersionID}, nil); !strings.Contains(msg, "draft") {
@@ -109,6 +113,74 @@ func TestPlanTools(t *testing.T) {
 	}
 	if msg := call(t, cs, "get_plan", map[string]any{}, nil); !strings.Contains(msg, "follow") {
 		t.Fatalf("get_plan without a followed plan: %q", msg)
+	}
+}
+
+func TestSaveDraftChecksItsTarget(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	alice, bob := connect(t, e.url, e.aliceToken), connect(t, e.url, e.bobToken)
+	type saved struct {
+		PlanID    string `json:"plan_id"`
+		VersionID string `json:"version_id"`
+	}
+	doc := func(name string) string { return strings.Replace(planDoc, `"Block"`, `"`+name+`"`, 1) }
+	var a, b saved
+	if msg := call(t, alice, "save_plan_draft", map[string]any{"doc": doc("Working title")}, &a); msg != "" {
+		t.Fatal(msg)
+	}
+	if msg := call(t, alice, "save_plan_draft", map[string]any{"doc": doc("Other")}, &b); msg != "" {
+		t.Fatal(msg)
+	}
+	planName := func(id string) string {
+		p, _, err := e.Plans().Plan(ctx, e.alice, id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return p.Name
+	}
+
+	// A version_id with the plan_id of another plan is refused.
+	if msg := call(t, alice, "save_plan_draft", map[string]any{"doc": doc("Mixed"), "plan_id": b.PlanID, "version_id": a.VersionID}, nil); !strings.Contains(msg, "plan_id") {
+		t.Fatalf("mismatched plan_id: %q", msg)
+	}
+
+	// Replacing the only draft of a draft-only plan renames the plan.
+	var r saved
+	if msg := call(t, alice, "save_plan_draft", map[string]any{"doc": doc("Final title"), "plan_id": a.PlanID, "version_id": a.VersionID}, &r); msg != "" {
+		t.Fatal(msg)
+	}
+	if r.VersionID != a.VersionID || planName(a.PlanID) != "Final title" {
+		t.Fatalf("replaced = %+v, plan name %q", r, planName(a.PlanID))
+	}
+
+	// Another user's plans and versions are not found.
+	for _, args := range []map[string]any{
+		{"doc": doc("Bob's"), "plan_id": a.PlanID},
+		{"doc": doc("Bob's"), "version_id": a.VersionID},
+	} {
+		if msg := call(t, bob, "save_plan_draft", args, nil); msg != "not found" {
+			t.Fatalf("bob saves into alice's plan (%v): %q", args, msg)
+		}
+	}
+	if planName(a.PlanID) != "Final title" {
+		t.Fatal("bob renamed alice's plan")
+	}
+
+	// An archived plan takes no drafts until the user restores it.
+	if err := e.Plans().Archive(ctx, e.alice, a.PlanID, true); err != nil {
+		t.Fatal(err)
+	}
+	for _, args := range []map[string]any{
+		{"doc": doc("Revived"), "plan_id": a.PlanID},
+		{"doc": doc("Revived"), "version_id": a.VersionID},
+	} {
+		if msg := call(t, alice, "save_plan_draft", args, nil); !strings.Contains(msg, "archived") {
+			t.Fatalf("draft of an archived plan (%v): %q", args, msg)
+		}
+	}
+	if planName(a.PlanID) != "Final title" {
+		t.Fatal("a refused draft renamed the archived plan")
 	}
 }
 

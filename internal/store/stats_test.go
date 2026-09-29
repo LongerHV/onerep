@@ -23,6 +23,34 @@ func mustUpsert(t *testing.T, db *DB, userID string, s Set) {
 	}
 }
 
+// The companion's PR table for a session holds only what was lifted before
+// it started: resuming an older workout must not compare against later ones.
+func TestRepMaxesBeforeASession(t *testing.T) {
+	db := newTestDB(t)
+	ctx := context.Background()
+	u := newUser(t, db, "u")
+	start := time.Now().UTC().Add(-48 * time.Hour)
+	older, err := db.CreateSession(ctx, Session{UserID: u.ID, Name: "older", Snapshot: []byte(`{}`), StartedAt: start})
+	if err != nil {
+		t.Fatal(err)
+	}
+	before := newSession(t, db, u.ID, "before")
+	mustUpsert(t, db, u.ID, logged(before.ID, "a", "working", 100, 5, nil, start.Add(-time.Hour)))
+	later := newSession(t, db, u.ID, "later")
+	mustUpsert(t, db, u.ID, logged(later.ID, "b", "working", 120, 5, nil, start.Add(24*time.Hour)))
+
+	maxes, err := db.RepMaxes(ctx, u.ID, "barbell-back-squat", older.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(maxes) != 1 || maxes[0].WeightKg != 100 {
+		t.Fatalf("rep maxes before the older session = %+v, want only the 100 kg set", maxes)
+	}
+	if maxes, _ := db.RepMaxes(ctx, "someone-else", "barbell-back-squat", older.ID); len(maxes) != 0 {
+		t.Fatalf("another user's rep maxes = %+v", maxes)
+	}
+}
+
 func TestRepMaxesAndPRs(t *testing.T) {
 	db := newTestDB(t)
 	ctx := context.Background()
