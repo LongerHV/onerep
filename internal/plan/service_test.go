@@ -137,12 +137,18 @@ func TestFollowAndMoveThroughPlan(t *testing.T) {
 		t.Fatalf("plan should be complete: %+v", n)
 	}
 
-	// Archiving the followed plan stops following it.
+	// Archiving the followed plan stops following it, and it can't be followed until restored.
 	if err := e.svc.Archive(ctx, e.alice, p.ID, true); err != nil {
 		t.Fatal(err)
 	}
 	if n, _ = e.svc.Next(ctx, e.alice); n != nil {
 		t.Fatal("archived plan still followed")
+	}
+	if err := e.svc.Follow(ctx, e.alice, p.ID); !errors.Is(err, ErrArchived) {
+		t.Fatalf("following an archived plan: %v", err)
+	}
+	if n, _ = e.svc.Next(ctx, e.alice); n != nil {
+		t.Fatal("archived plan followed")
 	}
 }
 

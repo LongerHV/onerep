@@ -285,8 +285,21 @@ func (s *Server) planDiscard(w http.ResponseWriter, r *http.Request) {
 func (s *Server) planFollow(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	err := s.Plans.Follow(r.Context(), user(r), id)
-	if errors.Is(err, plan.ErrNoActiveVersion) {
-		s.renderError(w, r, http.StatusConflict, "Activate a version of this plan before following it.")
+	var refusal string
+	switch {
+	case errors.Is(err, plan.ErrNoActiveVersion):
+		refusal = "Activate a version of this plan before following it."
+	case errors.Is(err, plan.ErrArchived):
+		refusal = "Restore this plan before following it."
+	}
+	if refusal != "" {
+		p, versions, err := s.Plans.Plan(r.Context(), user(r), id)
+		if err != nil {
+			s.fail(w, r, err)
+			return
+		}
+		d := views.PlanPage{Plan: p, Versions: versions, Notice: refusal}
+		render(w, r, http.StatusConflict, views.PlanDetailPage(page(r, p.Name), d))
 		return
 	}
 	if err != nil {

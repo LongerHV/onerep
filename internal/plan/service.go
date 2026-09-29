@@ -61,6 +61,9 @@ type Service struct {
 // ErrNoActiveVersion is returned when following a plan that has only drafts.
 var ErrNoActiveVersion = errors.New("the plan has no active version yet")
 
+// ErrArchived is returned when following an archived plan.
+var ErrArchived = errors.New("the plan is archived")
+
 // Save statuses.
 const (
 	SaveDraft    = store.PlanDraft
@@ -333,12 +336,17 @@ func (s *Service) Discard(ctx context.Context, user store.User, versionID string
 	return s.Store.DeleteDraft(ctx, user.ID, versionID)
 }
 
-// Follow makes planID the user's plan, starting at week 1, day 1.
+// Follow makes planID the user's plan, starting at week 1, day 1. Archived
+// plans and plans with only drafts can't be followed.
 func (s *Service) Follow(ctx context.Context, user store.User, planID string) error {
+	p, err := s.Store.PlanByID(ctx, user.ID, planID)
+	if err != nil {
+		return err
+	}
+	if p.Archived {
+		return ErrArchived
+	}
 	if _, err := s.Store.ActivePlanVersion(ctx, user.ID, planID); errors.Is(err, store.ErrNotFound) {
-		if _, perr := s.Store.PlanByID(ctx, user.ID, planID); perr != nil {
-			return perr
-		}
 		return ErrNoActiveVersion
 	} else if err != nil {
 		return err

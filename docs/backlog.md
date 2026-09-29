@@ -21,10 +21,6 @@ Known issues, deferred on purpose: each was found in a milestone's final review 
 - **Deleting a custom exercise keeps its settings.** The TM, equipment link, TM history and user alternatives remain, and come back if the slug is re-created. This may be intended (history is keyed by slug), but it's undocumented.
 - **Equipment links aren't checked against the exercise's kind** (a barbell exercise can link to a dumbbell profile), and changing a profile's kind keeps its links. (`internal/store/user_exercise.go`)
 
-## Plans
-
-- **Small loose ends:** `views.HomePage.Notice` is never set; `Service.Follow` doesn't refuse archived plans; following a plan that has only drafts shows a full 409 page instead of an inline message.
-
 ## Training and companion mode
 
 - **Notes from a slow phone clock are dropped.** `SetSessionNotes` compares the client's `updated_at` with `sessions.updated_at`, which is stamped by the server at start. A phone that is behind by more than the time since the start gets its notes Ignored but reported as applied. Fix: compare only against earlier notes edits. (`internal/store/sessions.go`)

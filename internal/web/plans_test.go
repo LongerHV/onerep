@@ -165,6 +165,31 @@ func TestReviewDraftThatResetsCursor(t *testing.T) {
 	}
 }
 
+// A plan that can't be followed says why on its own page.
+func TestFollowRefusalsAreInline(t *testing.T) {
+	srv, c := newApp(t, "alice")
+	csrf := session(t, srv, c)
+	resp, _ := post(t, c, srv.URL+"/plans", csrf, url.Values{"doc": {starter}, "action": {"draft"}})
+	draftOnly := planID(t, resp)
+	resp, body := post(t, c, srv.URL+"/plans/"+draftOnly+"/follow", csrf, nil)
+	if resp.StatusCode != http.StatusConflict || !strings.Contains(body, "Activate a version of this plan before following it.") ||
+		!strings.Contains(body, "Versions") {
+		t.Fatalf("following a draft-only plan: %d\n%s", resp.StatusCode, body)
+	}
+
+	resp, _ = post(t, c, srv.URL+"/plans", csrf, url.Values{"doc": {starter}, "action": {"activate"}})
+	archived := planID(t, resp)
+	post(t, c, srv.URL+"/plans/"+archived+"/archive", csrf, url.Values{"archived": {"1"}})
+	resp, body = post(t, c, srv.URL+"/plans/"+archived+"/follow", csrf, nil)
+	if resp.StatusCode != http.StatusConflict || !strings.Contains(body, "Restore this plan before following it.") ||
+		!strings.Contains(body, "Versions") {
+		t.Fatalf("following an archived plan: %d\n%s", resp.StatusCode, body)
+	}
+	if home := read(t, mustGet(t, c, srv.URL+"/")); !strings.Contains(home, "You are not following a plan") {
+		t.Fatal("a refused plan is followed")
+	}
+}
+
 func TestInvalidPlanKeepsTheText(t *testing.T) {
 	srv, c := newApp(t, "alice")
 	csrf := session(t, srv, c)
