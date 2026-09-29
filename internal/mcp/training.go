@@ -117,6 +117,13 @@ func day(name, v string) (time.Time, error) {
 	return t, nil
 }
 
+// monday is the start (Monday 00:00 UTC) of t's ISO week.
+func monday(t time.Time) time.Time {
+	t = t.UTC()
+	d := time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, time.UTC)
+	return d.AddDate(0, 0, -((int(d.Weekday()) + 6) % 7))
+}
+
 func summaryOf(s store.SessionSummary) sessionSummaryOut {
 	out := sessionSummaryOut{ID: s.ID, Name: s.Name, StartedAt: ts(s.StartedAt), PlanWeek: s.Week, PlanDay: s.Day,
 		Sets: s.Sets, Exercises: append([]string{}, s.Slugs...), Notes: s.Notes}
@@ -222,7 +229,8 @@ func (s *Server) addTrainingTools(srv *sdk.Server) {
 					return volumeOut{}, err
 				}
 			}
-			if to.Before(from) || to.Sub(from) > 104*7*24*time.Hour {
+			// Count the ISO weeks the range touches, between their Monday starts.
+			if to.Before(from) || monday(to).Sub(monday(from)) >= 104*7*24*time.Hour {
 				return volumeOut{}, inputError("from must be before to, and the range at most 104 weeks")
 			}
 			mw, err := s.Stats.WeeklyMuscleSets(ctx, u, from, to)
