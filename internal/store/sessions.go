@@ -10,15 +10,15 @@ import (
 
 // Session is a workout (spec §9).
 type Session struct {
-	ID            string
-	UserID        string
-	PlanID        string // "" for ad-hoc sessions
-	PlanVersionID string
-	Week, Day     int // 0 for ad-hoc sessions
-	Name          string
-	Snapshot      []byte // plan.ExpandedDay as JSON
-	StartedAt     time.Time
-	FinishedAt    *time.Time
+	ID             string
+	UserID         string
+	PlanID         string // "" for ad-hoc sessions
+	PlanVersionID  string
+	Week, Day      int // 0 for ad-hoc sessions
+	Name           string
+	Snapshot       []byte // plan.ExpandedDay as JSON
+	StartedAt      time.Time
+	FinishedAt     *time.Time
 	Notes          string
 	NotesUpdatedAt *time.Time // last notes edit, nil before the first
 	UpdatedAt      time.Time
