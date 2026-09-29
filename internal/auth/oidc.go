@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"cmp"
 	"context"
 	"encoding/base64"
 	"encoding/json"
@@ -22,6 +23,7 @@ type OIDC struct {
 	sessions *Sessions
 	oauth    oauth2.Config
 	verifier *oidc.IDTokenVerifier
+	provider *oidc.Provider // for UserInfo
 	issuer   string
 }
 
@@ -34,6 +36,7 @@ func NewOIDC(ctx context.Context, issuer, clientID, clientSecret, baseURL string
 	return &OIDC{
 		sessions: sessions,
 		issuer:   issuer,
+		provider: provider,
 		verifier: provider.Verifier(&oidc.Config{ClientID: clientID}),
 		oauth: oauth2.Config{
 			ClientID:     clientID,
@@ -155,6 +158,28 @@ func (o *OIDC) Callback(w http.ResponseWriter, r *http.Request) {
 	if err := idToken.Claims(&claims); err != nil {
 		fail("invalid claims", err)
 		return
+	}
+	// Some providers (Authelia 4.39+ by default) keep the profile out of the ID
+	// token and serve it from UserInfo: fill in what the ID token lacks.
+	if (claims.Name == "" && claims.PreferredUsername == "") || claims.Email == "" {
+		info, err := o.provider.UserInfo(ctx, oauth2.StaticTokenSource(token))
+		switch {
+		case err != nil:
+			slog.WarnContext(ctx, "oidc userinfo unavailable; using the ID token's claims", "err", err)
+		case info.Subject != idToken.Subject: // OIDC Core 5.3.2: don't trust UserInfo about someone else
+			slog.WarnContext(ctx, "oidc userinfo is for another subject; ignored")
+		default:
+			var more struct {
+				Email             string `json:"email"`
+				Name              string `json:"name"`
+				PreferredUsername string `json:"preferred_username"`
+			}
+			if err := info.Claims(&more); err == nil {
+				claims.Email = cmp.Or(claims.Email, more.Email)
+				claims.Name = cmp.Or(claims.Name, more.Name)
+				claims.PreferredUsername = cmp.Or(claims.PreferredUsername, more.PreferredUsername)
+			}
+		}
 	}
 	name := claims.Name
 	if name == "" {

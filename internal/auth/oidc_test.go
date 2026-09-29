@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/cookiejar"
@@ -10,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/oauth2-proxy/mockoidc"
 
 	"github.com/LongerHV/onerep/internal/store/storetest"
@@ -198,5 +200,46 @@ func TestOIDCPublicClientLoginFlow(t *testing.T) {
 	}
 	if sent.Get("client_id") != m.ClientID || sent.Get("code_verifier") == "" {
 		t.Errorf("token request = %v, want client_id and the PKCE verifier", sent)
+	}
+}
+
+// claimlessUser is a provider user like Authelia's (4.39+) default: the ID
+// token carries only the standard claims, and the profile (name, email) is
+// served by the UserInfo endpoint, for subject userinfoSub.
+type claimlessUser struct {
+	*mockoidc.MockUser
+	userinfoSub string
+}
+
+func (u claimlessUser) Claims(_ []string, claims *mockoidc.IDTokenClaims) (jwt.Claims, error) {
+	return claims, nil
+}
+
+func (u claimlessUser) Userinfo([]string) ([]byte, error) {
+	return json.Marshal(map[string]string{"sub": u.userinfoSub, "preferred_username": u.PreferredUsername, "email": u.Email})
+}
+
+func TestOIDCNameFromUserinfo(t *testing.T) {
+	m, app, client := oidcEnv(t)
+	m.QueueUser(claimlessUser{&mockoidc.MockUser{Subject: "opaque-uuid", PreferredUsername: "pat", Email: "pat@example.com"}, "opaque-uuid"})
+	resp, err := client.Get(app.URL + "/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := body(t, resp); got != "pat" {
+		t.Fatalf("name = %q, want the preferred_username from UserInfo", got)
+	}
+}
+
+// UserInfo about another subject is not trusted (OIDC Core 5.3.2).
+func TestOIDCUserinfoForAnotherSubjectIsIgnored(t *testing.T) {
+	m, app, client := oidcEnv(t)
+	m.QueueUser(claimlessUser{&mockoidc.MockUser{Subject: "opaque-uuid", PreferredUsername: "mallory"}, "someone-else"})
+	resp, err := client.Get(app.URL + "/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := body(t, resp); got != "opaque-uuid" {
+		t.Fatalf("name = %q, want the subject (UserInfo for another subject ignored)", got)
 	}
 }
