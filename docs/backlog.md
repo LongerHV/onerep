@@ -4,6 +4,7 @@ Known issues, deferred on purpose: each was found in a milestone's final review 
 
 ## Operations and deployment
 
+- **No favicon, app icons or web app manifest.** `/favicon.ico` is a 404, and installing onerep on a phone shows a generic icon and name. Fix: an icon set and a `manifest.webmanifest` (name, icons, `display: standalone`, theme colours) linked from the layout, both added to the service worker shell. (`views/layout.templ`, `static/`, `static/js/sw.js`)
 - **Backup onto an existing file.** An empty existing destination is silently overwritten. A non-database file fails with only `file is not a database (26)`, which reads as if the live database were corrupt. Fix: `os.Stat(dest)` first and wrap errors as `backup to <dest>: …`. (`internal/store/store.go`, Backup)
 - **`migrate` and `backup` need the full server config.** `config.Load` requires `ONEREP_BASE_URL` and the OIDC settings for every subcommand, so a host-side cron backup needs the client secret. Fix: only validate those for `serve`. (`cmd/onerep/main.go`)
 - **A failed migration leaves the database "dirty" with no way to recover in the image.** golang-migrate marks it dirty, and every later start fails. The distroless image has no `sqlite3` or `migrate force`. Fix: on `ErrDirty`, force the previous version (migrations run in a transaction, so the schema was rolled back), or add `onerep migrate --force N`. (`internal/store/store.go`)
