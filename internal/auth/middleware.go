@@ -2,10 +2,13 @@ package auth
 
 import (
 	"crypto/subtle"
+	"encoding/json"
 	"log/slog"
 	"net/http"
 	"net/url"
 	"strings"
+
+	"github.com/go-chi/chi/v5/middleware"
 )
 
 const (
@@ -29,8 +32,14 @@ func RequireUser(next http.Handler) http.Handler {
 		login := "/auth/login?next=" + url.QueryEscape(r.URL.RequestURI())
 		switch {
 		case strings.HasPrefix(r.URL.Path, "/api/"):
-			// Scripts can't follow a redirect to the IdP; tell them to sign in again.
-			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			// Scripts can't follow a redirect to the IdP; tell them to sign in again,
+			// in the JSON error shape of spec §16.
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusUnauthorized)
+			_ = json.NewEncoder(w).Encode(map[string]string{
+				"error":      "unauthorized",
+				"request_id": middleware.GetReqID(r.Context()),
+			})
 		case r.Header.Get("HX-Request") == "true":
 			w.Header().Set("HX-Redirect", login)
 			w.WriteHeader(http.StatusUnauthorized)
