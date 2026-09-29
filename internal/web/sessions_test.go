@@ -310,3 +310,47 @@ func TestEmptyWorkoutWhileFollowingAPlan(t *testing.T) {
 		t.Fatal("no empty workout option next to the planned day")
 	}
 }
+
+// The companion refreshes a session's sets after syncing, so sets deleted in
+// history or on another device disappear from an open workout screen. The
+// page's own bootstrap can't tell it that: it may be an offline or history
+// copy from before the latest sets were synced.
+func TestSessionSetsAPI(t *testing.T) {
+	srv, c, db := newAppDB(t, "alice")
+	csrf := session(t, srv, c)
+	id := startPlanned(t, srv.URL, c, csrf)
+	setID := "01900000-0000-7000-8000-0000000000b1"
+	syncOps(t, c, srv.URL, csrf, `{"ops": [`+setOpJSON("01900000-0000-7000-8000-0000000000a1", setID, id, 80, 5)+`]}`)
+
+	resp := mustGet(t, c, srv.URL+"/api/sessions/"+id+"/sets")
+	var out struct {
+		Sets []training.SetInput `json:"sets"`
+	}
+	if body := read(t, resp); resp.StatusCode != http.StatusOK || json.Unmarshal([]byte(body), &out) != nil {
+		t.Fatalf("sets: %d %s", resp.StatusCode, body)
+	}
+	if len(out.Sets) != 1 || out.Sets[0].ID != setID {
+		t.Fatalf("sets = %+v", out.Sets)
+	}
+
+	post(t, c, srv.URL+"/history/"+id+"/sets/"+setID+"/delete", csrf, nil)
+	if body := read(t, mustGet(t, c, srv.URL+"/api/sessions/"+id+"/sets")); !strings.Contains(body, `"sets":[]`) {
+		t.Fatalf("after delete: %s", body)
+	}
+
+	// Another user's session is not found.
+	ctx := context.Background()
+	bob, err := db.UpsertOIDCUser(ctx, "dev", "bob", "bob@localhost", "bob")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ex := &exercise.Service{Store: db}
+	svc := &training.Service{Store: db, Exercises: ex, Plans: &plan.Service{Store: db, Exercises: ex, History: db}}
+	theirs, err := svc.StartAdHoc(ctx, bob)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp := mustGet(t, c, srv.URL+"/api/sessions/"+theirs.ID+"/sets"); resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("another user's session: %d", resp.StatusCode)
+	}
+}
