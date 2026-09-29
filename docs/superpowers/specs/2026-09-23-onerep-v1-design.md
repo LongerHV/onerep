@@ -96,7 +96,7 @@ Conventions: all IDs are UUIDv7 stored as TEXT. Session and set IDs are generate
 
 ### Plans
 
-- `plans`: `id`, `user_id`, `name`, `archived`, `created_at`.
+- `plans`: `id`, `user_id`, `name`, `archived`, `created_at`, `next_version` (the number the next version gets, so a discarded draft's number is never reused).
 - `plan_versions`: `id`, `plan_id`, `version` (int, increasing per plan), `doc` JSON (authored form), `status` (`draft`|`active`|`superseded`), `source` (`web`|`mcp`), `note`, `created_at`. At most one `active` row per plan (partial unique index).
 - `active_plan`: `user_id` (PK), `plan_id`, `cursor_week` (1-based), `cursor_day` (0-based index into days applicable to that week).
 

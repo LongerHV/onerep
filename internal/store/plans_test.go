@@ -84,10 +84,27 @@ func TestDeleteDraftOnly(t *testing.T) {
 	if err := db.DeleteDraft(ctx, u.ID, draft.ID); err != nil {
 		t.Fatal(err)
 	}
-	// A deleted draft's number is reused by the next version.
+	// A deleted draft's number is never reused: notes and AI conversations
+	// that mention "v2" must keep meaning the discarded draft.
 	next, _ := db.SavePlanVersion(ctx, u.ID, p.ID, "P", []byte(`{}`), PlanDraft, "web", "")
-	if next.Version != 2 {
+	if next.Version != 3 {
 		t.Fatalf("next version = %d", next.Version)
+	}
+}
+
+// Plans created before the counter existed (next_version 0) continue after
+// their highest remaining version.
+func TestVersionCounterOnOlderPlans(t *testing.T) {
+	db := newTestDB(t)
+	ctx := context.Background()
+	u := newUser(t, db, "u")
+	p, _, _ := db.CreatePlan(ctx, u.ID, "P", []byte(`{}`), PlanActive, "web", "")
+	_, _ = db.SavePlanVersion(ctx, u.ID, p.ID, "P", []byte(`{}`), PlanDraft, "web", "")
+	if _, err := db.write.ExecContext(ctx, `UPDATE plans SET next_version = 0`); err != nil {
+		t.Fatal(err)
+	}
+	if v, err := db.SavePlanVersion(ctx, u.ID, p.ID, "P", []byte(`{}`), PlanDraft, "web", ""); err != nil || v.Version != 3 {
+		t.Fatalf("version = %d, %v", v.Version, err)
 	}
 }
 

@@ -126,10 +126,18 @@ func insertVersion(ctx context.Context, tx *sql.Tx, planID string, doc []byte, s
 		return PlanVersion{}, err
 	}
 	v := PlanVersion{ID: id, PlanID: planID, Doc: doc, Status: status, Source: source, Note: note, CreatedAt: time.Now().UTC()}
+	// plans.next_version keeps discarded drafts' numbers from coming back; it
+	// is 0 on plans from before the counter, which continue after their
+	// highest version.
 	err = tx.QueryRowContext(ctx, `INSERT INTO plan_versions (id, plan_id, version, doc, status, source, note, created_at)
-		VALUES (?, ?, (SELECT coalesce(max(version), 0) + 1 FROM plan_versions WHERE plan_id = ?), ?, ?, ?, ?, ?)
+		VALUES (?, ?, (SELECT max(p.next_version, coalesce((SELECT max(version) FROM plan_versions WHERE plan_id = p.id), 0) + 1)
+			FROM plans p WHERE p.id = ?), ?, ?, ?, ?, ?)
 		RETURNING version`,
 		v.ID, planID, planID, string(doc), status, source, note, formatTime(v.CreatedAt)).Scan(&v.Version)
+	if err != nil {
+		return PlanVersion{}, err
+	}
+	_, err = tx.ExecContext(ctx, `UPDATE plans SET next_version = ? WHERE id = ?`, v.Version+1, planID)
 	return v, err
 }
 

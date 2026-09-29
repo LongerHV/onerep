@@ -98,7 +98,11 @@ CREATE TABLE plans (
   user_id    TEXT    NOT NULL REFERENCES users (id) ON DELETE CASCADE,
   name       TEXT    NOT NULL,
   archived   INTEGER NOT NULL DEFAULT 0,
-  created_at TEXT    NOT NULL
+  created_at TEXT    NOT NULL,
+  -- The number the next version gets, so a discarded draft's number is never
+  -- reused. 0 on plans from before the counter: they continue after their
+  -- highest version (store.insertVersion).
+  next_version INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE INDEX plans_user_id ON plans (user_id);
