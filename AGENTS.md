@@ -57,6 +57,7 @@ testdata/calc_cases.json  shared Go/JS calc test vectors
 ## Rules
 
 - **Conventional Commits** for every commit and PR title: `feat(auth): ...`, `fix(store): ...`, `test: ...`, `docs: ...`, `chore(ci): ...`, `refactor: ...`. Scope is the package or area. CI checks PR titles.
+- **No agent session links in public text.** This repo is public: never put AI session URLs or IDs (e.g. `claude.ai/code/session_…`, `Claude-Session:` trailers) in commit messages, PR titles or bodies, issues or review comments. A `Co-Authored-By:` trailer is fine.
 - **TDD.** Write the failing test first, watch it fail, then implement.
 - **SQL only in `internal/store`.** Services depend on small interfaces declared in their own package, which `*store.DB` satisfies.
 - **Every user-owned query filters by `user_id`.** Another user's resource is `store.ErrNotFound`, which surfaces as 404, never 403.
