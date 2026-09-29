@@ -28,8 +28,8 @@ templ PlansPage(p Page, plans []plan.PlanSummary) {
 						<span class={ badge }>archived</span>
 					}
 					<p class="text-sm text-zinc-500">
-						if s.Active != nil {
-							Version { strconv.Itoa(s.Active.Version) } active
+						if s.ActiveVersion != 0 {
+							Version { strconv.Itoa(s.ActiveVersion) } active
 						} else {
 							No active version
 						}
@@ -278,10 +278,8 @@ templ PlanComparePage(p Page, pl store.Plan, c plan.Comparison, changed bool) {
 			This draft changed since you opened it, so it was not activated. Review the changes below, then activate it again.
 		</p>
 	}
-	if c.ResetsCursor {
-		<p class="mt-4 rounded bg-amber-100 p-2 text-sm dark:bg-amber-950">
-			Your current day does not exist in this version: activating it starts the plan over at week 1, day 1.
-		</p>
+	if c.Cursor != nil && c.Cursor.Kind != plan.CursorKept {
+		<p class="mt-4 rounded bg-amber-100 p-2 text-sm dark:bg-amber-950">{ cursorChange(*c.Cursor) }</p>
 	}
 	<div class="mt-4 flex gap-2">
 		<form method="post" action={ templ.URL("/plans/" + pl.ID + "/versions/" + c.Target.ID + "/activate") }>
