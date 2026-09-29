@@ -26,7 +26,7 @@ func StarterTemplate() []byte { return starterTemplate }
 type Store interface {
 	CreatePlan(ctx context.Context, userID, name string, doc []byte, status, source, note string) (store.Plan, store.PlanVersion, error)
 	SavePlanVersion(ctx context.Context, userID, planID, name string, doc []byte, status, source, note string) (store.PlanVersion, error)
-	ListPlans(ctx context.Context, userID string) ([]store.Plan, error)
+	ListPlans(ctx context.Context, userID string) ([]store.PlanListing, error)
 	PlanByID(ctx context.Context, userID, id string) (store.Plan, error)
 	SetPlanArchived(ctx context.Context, userID, id string, archived bool) error
 	PlanVersions(ctx context.Context, userID, planID string) ([]store.PlanVersion, error)
@@ -259,9 +259,7 @@ func (s *Service) fitCursor(ctx context.Context, user store.User, before *follow
 
 // PlanSummary is a plan as listed.
 type PlanSummary struct {
-	store.Plan
-	Active    *store.PlanVersion // nil if the plan has only drafts
-	Drafts    int
+	store.PlanListing
 	Following bool
 }
 
@@ -270,28 +268,28 @@ func (s *Service) Plans(ctx context.Context, user store.User) ([]PlanSummary, er
 	if err != nil {
 		return nil, err
 	}
-	following, err := s.Store.ActivePlan(ctx, user.ID)
-	if err != nil && !errors.Is(err, store.ErrNotFound) {
+	following, err := s.Position(ctx, user)
+	if err != nil {
 		return nil, err
 	}
 	out := make([]PlanSummary, 0, len(plans))
 	for _, p := range plans {
-		versions, err := s.Store.PlanVersions(ctx, user.ID, p.ID)
-		if err != nil {
-			return nil, err
-		}
-		sum := PlanSummary{Plan: p, Following: following.PlanID == p.ID}
-		for i, v := range versions {
-			switch v.Status {
-			case store.PlanActive:
-				sum.Active = &versions[i]
-			case store.PlanDraft:
-				sum.Drafts++
-			}
-		}
-		out = append(out, sum)
+		out = append(out, PlanSummary{PlanListing: p, Following: following != nil && following.PlanID == p.ID})
 	}
 	return out, nil
+}
+
+// Position is the user's cursor in the plan they follow, or nil. Unlike Next
+// it resolves nothing, for pages that only need to know what is followed.
+func (s *Service) Position(ctx context.Context, user store.User) (*store.ActivePlan, error) {
+	a, err := s.Store.ActivePlan(ctx, user.ID)
+	if errors.Is(err, store.ErrNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &a, nil
 }
 
 // Plan returns a plan with its versions, newest first.

@@ -141,21 +141,35 @@ func insertVersion(ctx context.Context, tx *sql.Tx, planID string, doc []byte, s
 	return v, err
 }
 
+// PlanListing is a plan as listed: its active version's number and how many
+// drafts it has, without any documents.
+type PlanListing struct {
+	Plan
+	ActiveVersion int // 0 when the plan has only drafts
+	Drafts        int
+}
+
 // ListPlans returns the user's plans, unarchived first, by name.
-func (db *DB) ListPlans(ctx context.Context, userID string) ([]Plan, error) {
-	rows, err := db.read.QueryContext(ctx, `SELECT `+planColumns+` FROM plans WHERE user_id = ?
-		ORDER BY archived, name COLLATE NOCASE`, userID)
+func (db *DB) ListPlans(ctx context.Context, userID string) ([]PlanListing, error) {
+	rows, err := db.read.QueryContext(ctx, `SELECT `+planColumns+`,
+			coalesce((SELECT version FROM plan_versions WHERE plan_id = plans.id AND status = 'active'), 0),
+			(SELECT count(*) FROM plan_versions WHERE plan_id = plans.id AND status = 'draft')
+		FROM plans WHERE user_id = ? ORDER BY archived, name COLLATE NOCASE`, userID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var out []Plan
+	var out []PlanListing
 	for rows.Next() {
-		p, err := scanPlan(rows)
-		if err != nil {
+		var l PlanListing
+		var created string
+		if err := rows.Scan(&l.ID, &l.UserID, &l.Name, &l.Archived, &created, &l.ActiveVersion, &l.Drafts); err != nil {
 			return nil, err
 		}
-		out = append(out, p)
+		if l.CreatedAt, err = parseTime(created); err != nil {
+			return nil, err
+		}
+		out = append(out, l)
 	}
 	return out, rows.Err()
 }

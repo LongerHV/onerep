@@ -166,7 +166,7 @@ func TestPlansSummary(t *testing.T) {
 	_, _, _ = e.svc.Save(ctx, e.alice, p.ID, weeksDoc(2), SaveDraft, "mcp", "")
 	_ = e.svc.Follow(ctx, e.alice, p.ID)
 	list, err := e.svc.Plans(ctx, e.alice)
-	if err != nil || len(list) != 1 || list[0].Active == nil || list[0].Drafts != 1 || !list[0].Following || list[0].Name != "Test" {
+	if err != nil || len(list) != 1 || list[0].ActiveVersion != 1 || list[0].Drafts != 1 || !list[0].Following || list[0].Name != "Test" {
 		t.Fatalf("plans = %+v, %v", list, err)
 	}
 	if other, _ := e.svc.Plans(ctx, e.bob); len(other) != 0 {

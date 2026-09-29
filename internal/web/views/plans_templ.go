@@ -196,15 +196,15 @@ func PlansPage(p Page, plans []plan.PlanSummary) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			if s.Active != nil {
+			if s.ActiveVersion != 0 {
 				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 17, "Version ")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 				var templ_7745c5c3_Var14 string
-				templ_7745c5c3_Var14, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(s.Active.Version))
+				templ_7745c5c3_Var14, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(s.ActiveVersion))
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/views/plans.templ`, Line: 32, Col: 47}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/views/plans.templ`, Line: 32, Col: 46}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var14))
 				if templ_7745c5c3_Err != nil {

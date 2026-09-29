@@ -137,14 +137,14 @@ func (s *Server) planDetail(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
-	next, err := s.Plans.Next(ctx, u)
+	pos, err := s.Plans.Position(ctx, u)
 	if err != nil {
 		s.fail(w, r, err)
 		return
 	}
-	d := views.PlanPage{Plan: p, Versions: versions, Following: next != nil && next.Plan.ID == p.ID}
+	d := views.PlanPage{Plan: p, Versions: versions, Following: pos != nil && pos.PlanID == p.ID}
 	if d.Following {
-		d.Notice = cursorNotice(r.URL.Query().Get("cursor"), next.Week, next.Day)
+		d.Notice = cursorNotice(r.URL.Query().Get("cursor"), pos.Week, pos.Day)
 	}
 	render(w, r, http.StatusOK, views.PlanDetailPage(page(r, p.Name), d))
 }

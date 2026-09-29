@@ -28,8 +28,8 @@ templ PlansPage(p Page, plans []plan.PlanSummary) {
 						<span class={ badge }>archived</span>
 					}
 					<p class="text-sm text-zinc-500">
-						if s.Active != nil {
-							Version { strconv.Itoa(s.Active.Version) } active
+						if s.ActiveVersion != 0 {
+							Version { strconv.Itoa(s.ActiveVersion) } active
 						} else {
 							No active version
 						}

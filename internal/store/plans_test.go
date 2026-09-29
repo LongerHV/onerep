@@ -92,6 +92,30 @@ func TestDeleteDraftOnly(t *testing.T) {
 	}
 }
 
+// The plan list counts versions without loading their documents.
+func TestListPlans(t *testing.T) {
+	db := newTestDB(t)
+	ctx := context.Background()
+	alice, bob := newUser(t, db, "alice"), newUser(t, db, "bob")
+	p, _, _ := db.CreatePlan(ctx, alice.ID, "b plan", []byte(`{}`), PlanActive, "web", "")
+	_, _ = db.SavePlanVersion(ctx, alice.ID, p.ID, "b plan", []byte(`{}`), PlanActive, "web", "")
+	_, _ = db.SavePlanVersion(ctx, alice.ID, p.ID, "b plan", []byte(`{}`), PlanDraft, "mcp", "")
+	_, _ = db.SavePlanVersion(ctx, alice.ID, p.ID, "b plan", []byte(`{}`), PlanDraft, "mcp", "")
+	q, _, _ := db.CreatePlan(ctx, alice.ID, "A draft", []byte(`{}`), PlanDraft, "web", "")
+	_, _, _ = db.CreatePlan(ctx, bob.ID, "Bob's", []byte(`{}`), PlanActive, "web", "")
+
+	got, err := db.ListPlans(ctx, alice.ID)
+	if err != nil || len(got) != 2 {
+		t.Fatalf("plans = %+v, %v", got, err)
+	}
+	if got[0].ID != q.ID || got[0].ActiveVersion != 0 || got[0].Drafts != 1 {
+		t.Fatalf("draft-only plan = %+v", got[0])
+	}
+	if got[1].ID != p.ID || got[1].ActiveVersion != 2 || got[1].Drafts != 2 {
+		t.Fatalf("plan = %+v", got[1])
+	}
+}
+
 // Plans created before the counter existed (next_version 0) continue after
 // their highest remaining version.
 func TestVersionCounterOnOlderPlans(t *testing.T) {
