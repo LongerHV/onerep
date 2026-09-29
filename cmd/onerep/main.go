@@ -164,15 +164,26 @@ func serve(ctx context.Context, cfg config.Config) error {
 	return httpSrv.Shutdown(shutdownCtx)
 }
 
-// cleanupSessions deletes expired auth sessions once an hour.
+// appliedOpsRetention is how long a sync operation's idempotency record is
+// kept. Clients retry an operation only until a sync answers it.
+const appliedOpsRetention = 90 * 24 * time.Hour
+
+// cleanupSessions deletes expired auth sessions and old sync operation
+// records once an hour.
 func cleanupSessions(ctx context.Context, db *store.DB) {
 	t := time.NewTicker(time.Hour)
 	defer t.Stop()
 	for {
-		if n, err := db.DeleteExpiredAuthSessions(ctx, time.Now()); err != nil && ctx.Err() == nil {
+		now := time.Now()
+		if n, err := db.DeleteExpiredAuthSessions(ctx, now); err != nil && ctx.Err() == nil {
 			slog.Error("cleanup sessions", "err", err)
 		} else if n > 0 {
 			slog.Info("cleanup sessions", "deleted", n)
+		}
+		if n, err := db.DeleteAppliedOpsBefore(ctx, now.Add(-appliedOpsRetention)); err != nil && ctx.Err() == nil {
+			slog.Error("cleanup applied ops", "err", err)
+		} else if n > 0 {
+			slog.Info("cleanup applied ops", "deleted", n)
 		}
 		select {
 		case <-ctx.Done():

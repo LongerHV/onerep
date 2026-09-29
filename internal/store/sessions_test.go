@@ -228,3 +228,27 @@ func TestCreateSessionStartTime(t *testing.T) {
 		t.Fatalf("default start = %v", now.StartedAt)
 	}
 }
+
+// Old idempotency records are pruned; recent ones still answer replays.
+func TestDeleteAppliedOpsBefore(t *testing.T) {
+	db := newTestDB(t)
+	ctx := context.Background()
+	alice := newUser(t, db, "alice")
+	sa := newSession(t, db, alice.ID, "A")
+	if _, err := db.UpsertSet(ctx, alice.ID, set(sa.ID, "a-1", 100, t0), "old-op"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.write.ExecContext(ctx, `UPDATE applied_ops SET applied_at = ? WHERE op_id = 'old-op'`, formatTime(t0)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.UpsertSet(ctx, alice.ID, set(sa.ID, "a-2", 100, t0), "new-op"); err != nil {
+		t.Fatal(err)
+	}
+	n, err := db.DeleteAppliedOpsBefore(ctx, t0.Add(time.Hour))
+	if err != nil || n != 1 {
+		t.Fatalf("deleted %d, %v; want 1", n, err)
+	}
+	if out, err := db.UpsertSet(ctx, alice.ID, set(sa.ID, "a-2", 100, t0), "new-op"); err != nil || out != Duplicate {
+		t.Fatalf("recent op replay: %v %v", out, err)
+	}
+}

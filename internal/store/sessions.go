@@ -448,3 +448,14 @@ func (db *DB) SearchSessions(ctx context.Context, userID string, f SessionFilter
 	}
 	return out, rows.Err()
 }
+
+// DeleteAppliedOpsBefore forgets sync operations applied before before. A
+// client retries an operation only while it is in its outbox, which a
+// successful sync empties within seconds, so old records answer nothing.
+func (db *DB) DeleteAppliedOpsBefore(ctx context.Context, before time.Time) (int64, error) {
+	res, err := db.write.ExecContext(ctx, `DELETE FROM applied_ops WHERE applied_at < ?`, formatTime(before))
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
+}
