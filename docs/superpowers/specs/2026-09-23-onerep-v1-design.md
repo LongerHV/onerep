@@ -250,7 +250,7 @@ After a session, edits happen on normal htmx pages (`/history`, `/history/{sessi
 - Auth session: random ID in an HttpOnly, Secure (except dev), SameSite=Lax cookie; 30-day sliding expiry; stored hashed in `auth_sessions`.
 - CSRF: per-session token, sent by htmx via `hx-headers` and by the companion client as `X-CSRF-Token`; required on all non-GET requests except `/mcp` (bearer-token auth).
 - Dev bypass: `ONEREP_DEV_USER=<name>` logs in as that user without OIDC; honoured only when `ONEREP_ENV=dev`; logs a warning at startup.
-- Local Dex: `dev/dex.yaml` configures a static password connector with two users (`alice`, `bob`) and an `onerep` client. Run with the `dex` binary from the Nix dev shell (`task dev:dex`). `deploy/compose.yaml` shows a production-like app + Dex setup.
+- Local Dex: `dev/dex.yaml` configures a static password connector with two users (`alice`, `bob`) and an `onerep` client. Run with the `dex` binary from the Nix dev shell (`task dex`). `deploy/compose.yaml` shows a production-like app + Dex setup.
 - API tokens for MCP: created/revoked at `/settings/tokens`; shown once; stored as SHA-256 hash; sent as `Authorization: Bearer <token>`.
 
 ## 12. MCP server

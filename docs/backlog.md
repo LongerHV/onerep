@@ -10,10 +10,7 @@ Known issues, deferred on purpose: each was found in a milestone's final review 
 - **A failed migration leaves the database "dirty" with no way to recover in the image.** golang-migrate marks it dirty, and every later start fails. The distroless image has no `sqlite3` or `migrate force`. Fix: on `ErrDirty`, force the previous version (migrations run in a transaction, so the schema was rolled back), or add `onerep migrate --force N`. (`internal/store/store.go`)
 - **Base URL with a path is accepted but unsupported.** `https://host/onerep` passes validation, but routes, assets and the cookie path are absolute. Fix: reject a non-empty path, or document that onerep must be served at the root. (`internal/config/config.go`)
 - **Static assets are unversioned and cached for an hour.** Users can see stale CSS and JS for up to an hour after an upgrade. Fix: content-hashed URLs, served as immutable. (`internal/web/static.go`)
-- **Pre-release tags publish `latest`,** and the release workflow doesn't wait for CI. (`.github/workflows/release.yml`)
 - **A second SIGTERM or Ctrl-C during shutdown is ignored.** Fix: call `stop()` as soon as the first signal arrives. (`cmd/onerep/main.go`)
-- **Compose user default.** `${UID:-1000}:${GID:-1000}`: bash doesn't export `UID` or define `GID`, so compose always runs as 1000:1000. Fix: document `UID=$(id -u) GID=$(id -g) docker compose up`, or use `.env`. (`deploy/compose.yaml`)
-- **Task name differs from the spec.** Spec §11 says `task dev:dex`; the Taskfile and docs say `task dex`.
 
 ## Auth
 
