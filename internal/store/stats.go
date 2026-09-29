@@ -118,13 +118,17 @@ type HardSet struct {
 	DoneAt time.Time
 }
 
+// hardSetsQuery is HardSets' query. The sets_user_done index covers it, so a
+// date range reads only that range, already in order.
+const hardSetsQuery = `SELECT slug, done_at FROM sets
+	WHERE user_id = ? AND kind IN ('working', 'drop', 'amrap') AND (rpe IS NULL OR rpe >= 7)
+		AND deleted_at IS NULL AND done_at >= ? AND done_at < ?
+	ORDER BY done_at, id`
+
 // HardSets returns the hard sets done in [from, to), oldest first: working,
 // drop and AMRAP sets at RPE 7 or more, or with no RPE (spec §13).
 func (db *DB) HardSets(ctx context.Context, userID string, from, to time.Time) ([]HardSet, error) {
-	rows, err := db.read.QueryContext(ctx, `SELECT slug, done_at FROM sets
-		WHERE user_id = ? AND kind IN ('working', 'drop', 'amrap') AND (rpe IS NULL OR rpe >= 7)
-			AND deleted_at IS NULL AND done_at >= ? AND done_at < ?
-		ORDER BY done_at, id`, userID, formatTime(from), formatTime(to))
+	rows, err := db.read.QueryContext(ctx, hardSetsQuery, userID, formatTime(from), formatTime(to))
 	if err != nil {
 		return nil, err
 	}
