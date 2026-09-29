@@ -18,11 +18,6 @@ Known issues, deferred on purpose: each was found in a milestone's final review 
 - **Login and logout errors are bare text pages** with no way back. An IdP `access_denied` or an expired session on logout shows plain text. Fix: render the error page with a "Sign in again" link. (`internal/auth/oidc.go`, `middleware.go`)
 - **Unused field `OIDC.issuer`.** (`internal/auth/oidc.go`)
 
-## Calculations
-
-- **Go and JS disagree above about 9.2e16 kg or for +Inf,** because of int64 overflow in `cents`. It can't be reached from the UI. Fix: clamp non-finite or huge targets in both `Round` implementations, and add a shared test vector. (`internal/calc/units.go`, `calc.js`)
-- **Go `E1RM(NaN, …)` returns ok; JS returns null.** Fix: `if !(weightKg > 0)`. (`internal/calc/e1rm.go`)
-
 ## Exercises and equipment
 
 - **`nan` is accepted as a number.** As a training max it silently clears the TM and logs a "none → none" change. As a calculator percentage it renders "NaN%". Fix: reject non-finite values when parsing the TM and pct, and in `SetTrainingMax`. (`internal/web/exercises.go`, `internal/exercise/service.go`)

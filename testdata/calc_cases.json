@@ -74,7 +74,18 @@
      "equipment": {"kind": "bodyweight", "unit": "kg", "config": {}},
      "kg": 10.5, "per_side": []},
     {"name": "negative target", "target_kg": -5, "fallback_unit": "kg", "equipment": null,
-     "kg": 0, "per_side": []}
+     "kg": 0, "per_side": []},
+    {"name": "huge target, no equipment, is clamped", "target_kg": 1e20, "fallback_unit": "kg", "equipment": null,
+     "kg": 1000000, "per_side": []},
+    {"name": "huge target, barbell, is capped per side", "target_kg": 1e20,
+     "equipment": {"kind": "barbell", "unit": "kg", "config": {"bar": 20, "plates": [1000]}},
+     "kg": 2020, "per_side": [1000]},
+    {"name": "huge target, dumbbell, gives the heaviest", "target_kg": 1e20,
+     "equipment": {"kind": "dumbbell", "unit": "kg", "config": {"weights": [2, 50, 4]}},
+     "kg": 50, "per_side": []},
+    {"name": "huge target, machine, gives the max", "target_kg": 1e300,
+     "equipment": {"kind": "machine", "unit": "kg", "config": {"min": 5, "step": 5, "max": 100}},
+     "kg": 100, "per_side": []}
   ],
   "resolve": [
     {"name": "absolute weight as given", "load": {"weight": 102.3}, "reps": 5,

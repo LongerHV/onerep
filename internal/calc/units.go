@@ -33,3 +33,7 @@ func FromKg(kg float64, unit string) float64 {
 // cents converts a weight to integer hundredths, tolerating float noise
 // (99.99999999 counts as 100.00).
 func cents(v float64) int64 { return int64(math.Floor(v*100 + 1e-6)) }
+
+// maxTargetKg clamps rounding targets: far above any real load, and small
+// enough that cents never overflows int64 (Go) or loses integer precision (JS).
+const maxTargetKg = 1e6

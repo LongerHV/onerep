@@ -132,6 +132,20 @@ func TestRoundAbsurdTargetsStayBounded(t *testing.T) {
 	if got := Round(math.NaN(), nil, UnitKg); got.Kg != 0 {
 		t.Fatalf("NaN target: got %v", got.Kg)
 	}
+	// JSON can't carry +Inf, so these mirror the "huge target" vectors.
+	if got := Round(math.Inf(1), bar, UnitKg); !near(got.Kg, 20+2*1000) {
+		t.Fatalf("+Inf target, barbell: got %v", got.Kg)
+	}
+	if got := Round(math.Inf(1), nil, UnitKg); !near(got.Kg, maxTargetKg) {
+		t.Fatalf("+Inf target, no equipment: got %v, want %v", got.Kg, maxTargetKg)
+	}
+}
+
+// JSON can't carry NaN, so this isn't a shared vector; calc.test.mjs mirrors it.
+func TestE1RMNaNWeightGivesNoResult(t *testing.T) {
+	if got, method, ok := E1RM(math.NaN(), 5, 8); ok {
+		t.Fatalf("E1RM(NaN, 5, 8) = %v %s, want no result", got, method)
+	}
 }
 
 func TestEquipmentValidate(t *testing.T) {
