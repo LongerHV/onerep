@@ -14,6 +14,7 @@ import (
 	"github.com/LongerHV/onerep/internal/exercise"
 	"github.com/LongerHV/onerep/internal/plan"
 	"github.com/LongerHV/onerep/internal/training"
+	"github.com/LongerHV/onerep/internal/web/static"
 )
 
 // startPlanned follows the starter plan and starts its first day; it returns
@@ -228,6 +229,34 @@ func TestServiceWorkerAndOfflinePage(t *testing.T) {
 	resp, body = getWith(t, c, srv.URL+"/offline")
 	if resp.StatusCode != http.StatusOK || !strings.Contains(body, "You are offline") || !strings.Contains(body, "<html") {
 		t.Fatalf("offline page: %d", resp.StatusCode)
+	}
+}
+
+// The service worker caches the same hashed URLs the pages reference.
+func TestServiceWorkerShellUsesHashedURLs(t *testing.T) {
+	srv, c := newApp(t, "")
+	_, body := getWith(t, c, srv.URL+"/sw.js")
+	for _, name := range []string{"app.css", "js/companion.js", "js/calc.js", "vendor/htmx.min.js",
+		"manifest.webmanifest", "icons/icon.svg", "icons/icon-192.png"} {
+		if !strings.Contains(body, strconv.Quote(static.URL(name))) {
+			t.Errorf("sw.js misses %s", static.URL(name))
+		}
+	}
+	if strings.Contains(body, "/*ASSETS*/") || !strings.Contains(body, `const VERSION = "`+shellVersion()+`"`) {
+		t.Fatalf("sw.js not filled in:\n%.400s", body)
+	}
+}
+
+// The shell caches /offline, so a changed offline page (or layout) needs a
+// new shell version even when no static file changed.
+func TestShellVersionCoversTheOfflinePage(t *testing.T) {
+	a := shellVersionOf("abc", []byte("<p>one</p>"))
+	if a == shellVersionOf("abc", []byte("<p>two</p>")) || a == shellVersionOf("abd", []byte("<p>one</p>")) {
+		t.Fatal("shell version ignores an input")
+	}
+	doc := string(offlineDocument())
+	if !strings.Contains(doc, "You are offline") || !strings.Contains(doc, "<html") {
+		t.Fatalf("offline document:\n%.300s", doc)
 	}
 }
 

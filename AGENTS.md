@@ -46,7 +46,7 @@ internal/plan/         plan JSON Schema + validation, per-week expansion, load r
 internal/training/     sessions, companion sync operations (idempotent, last write wins), bootstrap, history editing
 internal/stats/        e1RM series, rep maxes and PRs, weekly hard sets per muscle (queries in store/stats.go)
 internal/mcp/          MCP server (go-sdk): tools and prompts over the services, bearer-token auth, mounted at /mcp
-internal/web/          chi router, handlers, views/ (templ), static/ (embedded), jstest/ (node tests)
+internal/web/          chi router, handlers, views/ (templ), static/ (embedded; static.URL gives content-hashed URLs), jstest/ (node tests)
                          static/js/companion*.js + sw.js: offline workout screen and service worker
                          static/js/stats.js + chart-data.js: uPlot charts from /api/stats/*
                          static/js/plan-form*.js: plan editor form (vendored json-editor) and its pure logic

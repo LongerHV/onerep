@@ -1,6 +1,9 @@
 package views
 
-import "github.com/LongerHV/onerep/internal/auth"
+import (
+	"github.com/LongerHV/onerep/internal/auth"
+	"github.com/LongerHV/onerep/internal/web/static"
+)
 
 templ Layout(p Page) {
 	<!DOCTYPE html>
@@ -10,13 +13,19 @@ templ Layout(p Page) {
 			<meta name="viewport" content="width=device-width, initial-scale=1"/>
 			<title>{ p.Title } · onerep</title>
 			<meta name="htmx-config" content={ htmxConfig }/>
-			<link rel="stylesheet" href="/static/app.css"/>
-			<link rel="stylesheet" href="/static/vendor/uplot/uPlot.min.css"/>
-			<script src="/static/vendor/htmx.min.js" defer></script>
-			<script type="module" src="/static/js/plan-form.js"></script>
-			<script type="module" src="/static/js/companion.js"></script>
-			<script type="module" src="/static/js/stats.js"></script>
-			<script type="module" src="/static/js/local-time.js"></script>
+			<meta name="theme-color" content="#fafafa" media="(prefers-color-scheme: light)"/>
+			<meta name="theme-color" content="#09090b" media="(prefers-color-scheme: dark)"/>
+			<link rel="manifest" href={ static.URL("manifest.webmanifest") }/>
+			<link rel="icon" href={ static.URL("icons/icon.svg") } type="image/svg+xml"/>
+			<link rel="apple-touch-icon" href={ static.URL("icons/apple-touch-icon.png") }/>
+			<link rel="stylesheet" href={ static.URL("app.css") }/>
+			<link rel="stylesheet" href={ static.URL("vendor/uplot/uPlot.min.css") }/>
+			@templ.Raw(`<script type="importmap">` + static.ImportMap() + `</script>`)
+			<script src={ static.URL("vendor/htmx.min.js") } defer></script>
+			<script type="module" src={ static.URL("js/plan-form.js") }></script>
+			<script type="module" src={ static.URL("js/companion.js") }></script>
+			<script type="module" src={ static.URL("js/stats.js") }></script>
+			<script type="module" src={ static.URL("js/local-time.js") }></script>
 		</head>
 		<body
 			class="min-h-screen bg-zinc-50 text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100"

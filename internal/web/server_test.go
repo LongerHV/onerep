@@ -176,6 +176,18 @@ func TestHealthzAndStatic(t *testing.T) {
 	}
 }
 
+func TestFavicon(t *testing.T) {
+	srv, c := newApp(t, "")
+	resp := mustGet(t, c, srv.URL+"/favicon.ico")
+	body := read(t, resp)
+	if resp.StatusCode != http.StatusOK || resp.Header.Get("Content-Type") != "image/x-icon" || len(body) < 100 {
+		t.Fatalf("favicon: %d %s %d bytes", resp.StatusCode, resp.Header.Get("Content-Type"), len(body))
+	}
+	if cc := resp.Header.Get("Cache-Control"); cc != "public, max-age=86400" {
+		t.Fatalf("Cache-Control %q", cc)
+	}
+}
+
 func TestNotFoundPageShowsRequestID(t *testing.T) {
 	srv, c := newApp(t, "alice")
 	resp := mustGet(t, c, srv.URL+"/nope")

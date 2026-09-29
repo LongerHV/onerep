@@ -1,6 +1,8 @@
 package web
 
 import (
+	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -10,11 +12,13 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/a-h/templ"
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 
 	"github.com/LongerHV/onerep/internal/auth"
 	"github.com/LongerHV/onerep/internal/training"
+	"github.com/LongerHV/onerep/internal/web/static"
 	"github.com/LongerHV/onerep/internal/web/views"
 )
 
@@ -107,28 +111,53 @@ func apiCSRF(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"csrf": id.CSRFToken, "user_id": id.User.ID})
 }
 
-// serviceWorker serves /sw.js with its cache version set to a hash of the
-// static files, so every release refreshes the offline copy.
-func serviceWorker(w http.ResponseWriter, _ *http.Request) {
-	w.Header().Set("Content-Type", "text/javascript; charset=utf-8")
-	w.Header().Set("Cache-Control", "no-cache")
-	src, _ := fs.ReadFile(staticFS, "static/js/sw.js")
-	_, _ = w.Write([]byte(strings.ReplaceAll(string(src), "__VERSION__", staticVersion())))
+// serviceWorker serves /sw.js with its cache version set to shellVersion, so
+// every release refreshes the offline copy, and with the hashed URLs of the
+// static files, so it caches exactly what the pages reference.
+var serviceWorker = sync.OnceValue(func() http.HandlerFunc {
+	src, err := fs.ReadFile(static.FS, "js/sw.js")
+	if err != nil {
+		panic(err)
+	}
+	assets, err := json.Marshal(static.URLs())
+	if err != nil {
+		panic(err)
+	}
+	body := []byte(strings.NewReplacer("__VERSION__", shellVersion(), "{/*ASSETS*/}", string(assets)).Replace(string(src)))
+	return func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/javascript; charset=utf-8")
+		w.Header().Set("Cache-Control", "no-cache")
+		_, _ = w.Write(body)
+	}
+})
+
+// shellVersion covers what the service worker caches: the static files and
+// the /offline page with its layout.
+var shellVersion = sync.OnceValue(func() string {
+	return shellVersionOf(static.Version(), offlineDocument())
+})
+
+func shellVersionOf(staticVersion string, offline []byte) string {
+	h := sha256.New()
+	h.Write([]byte(staticVersion))
+	h.Write([]byte{0})
+	h.Write(offline)
+	return hex.EncodeToString(h.Sum(nil))[:12]
 }
 
-var staticVersion = sync.OnceValue(func() string {
-	h := sha256.New()
-	_ = fs.WalkDir(staticFS, "static", func(path string, d fs.DirEntry, err error) error {
-		if err != nil || d.IsDir() {
-			return err
-		}
-		b, err := fs.ReadFile(staticFS, path)
-		h.Write([]byte(path))
-		h.Write(b)
-		return err
-	})
-	return hex.EncodeToString(h.Sum(nil))[:12]
-})
+// offlineDocument renders the /offline page as an anonymous visitor sees it.
+func offlineDocument() []byte {
+	p := views.Page{Title: "Offline"}
+	var content, doc bytes.Buffer
+	ctx := context.Background()
+	if err := views.Offline(p).Render(ctx, &content); err != nil {
+		panic(err)
+	}
+	if err := views.Layout(p).Render(templ.WithChildren(ctx, templ.Raw(content.String())), &doc); err != nil {
+		panic(err)
+	}
+	return doc.Bytes()
+}
 
 func (s *Server) offline(w http.ResponseWriter, r *http.Request) {
 	render(w, r, http.StatusOK, views.Offline(page(r, "Offline")))

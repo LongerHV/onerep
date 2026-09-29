@@ -19,6 +19,7 @@ import (
 	"github.com/LongerHV/onerep/internal/stats"
 	"github.com/LongerHV/onerep/internal/store"
 	"github.com/LongerHV/onerep/internal/training"
+	"github.com/LongerHV/onerep/internal/web/static"
 	"github.com/LongerHV/onerep/internal/web/views"
 )
 
@@ -52,9 +53,10 @@ func (s *Server) Routes() http.Handler {
 		r.Handle("/mcp", http.MaxBytesHandler(s.MCP, maxBodyBytes)) // bearer-token auth, no cookies or CSRF (spec §11)
 	}
 	r.Get("/schema/plan.json", planSchema)
-	r.Get("/sw.js", serviceWorker)
+	r.Get("/sw.js", serviceWorker())
 	r.With(s.layout).Get("/offline", s.offline)
-	r.Handle("/static/*", staticHandler())
+	r.Handle("/static/*", static.Handler())
+	r.Get("/favicon.ico", static.Favicon)
 	r.With(s.layout).Get("/auth/signed-out", func(w http.ResponseWriter, r *http.Request) {
 		render(w, r, http.StatusOK, views.SignedOut(page(r, "Signed out")))
 	})
