@@ -13,14 +13,6 @@ Known issues, deferred on purpose: each was found in a milestone's final review 
 - **Login and logout errors are bare text pages** with no way back. An IdP `access_denied` or an expired session on logout shows plain text. Fix: render the error page with a "Sign in again" link. (`internal/auth/oidc.go`, `middleware.go`)
 - **Unused field `OIDC.issuer`.** (`internal/auth/oidc.go`)
 
-## Exercises and equipment
-
-- **The exercise settings form isn't saved all at once.** The equipment link is saved even when the training max is rejected. The 1,500 kg limit says "enter a positive weight", which is misleading. (`internal/web/exercises.go`, `internal/exercise/service.go`)
-- **A custom slug that later collides with a new seeded slug** shows as "customized", picks up the seed's alternatives, and its Delete button becomes "Reset to default". (`internal/store/exercises.go`, `views/exercises.templ`)
-- **Hidden seeded slugs are "taken" but invisible.** Create reports "already exists", and Update revives the slug as a user copy. (`internal/exercise/service.go`)
-- **Deleting a custom exercise keeps its settings.** The TM, equipment link, TM history and user alternatives remain, and come back if the slug is re-created. This may be intended (history is keyed by slug), but it's undocumented.
-- **Equipment links aren't checked against the exercise's kind** (a barbell exercise can link to a dumbbell profile), and changing a profile's kind keeps its links. (`internal/store/user_exercise.go`)
-
 ## Plans
 
 - **A completed plan restarts when a shorter version is activated.** The comparison page warns first; whether "complete" should be preserved is undecided. (`internal/plan/service.go`, keepsCursor)

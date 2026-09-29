@@ -52,6 +52,9 @@ CREATE TABLE exercises (
   secondary_muscles TEXT    NOT NULL DEFAULT '[]',
   aliases           TEXT    NOT NULL DEFAULT '[]',
   hidden            INTEGER NOT NULL DEFAULT 0, -- global rows dropped from the seed file
+  -- user rows: 1 = created by the user as a new exercise, 0 = a customized copy
+  -- of a seeded exercise. Only a copy overrides a global row with its slug.
+  original          INTEGER NOT NULL DEFAULT 0,
   created_at        TEXT    NOT NULL,
   updated_at        TEXT    NOT NULL
 );

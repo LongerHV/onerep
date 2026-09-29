@@ -74,16 +74,15 @@ templ ExerciseDetailPage(p Page, d ExerciseDetail) {
 					Customize
 				}
 			</a>
-			if d.Exercise.Custom() {
-				<form method="post" action={ templ.URL("/exercises/" + d.Exercise.Slug + "/delete") }>
+			if d.Exercise.Overrides {
+				<form method="post" action={ templ.URL("/exercises/" + d.Exercise.Slug + "/delete") } onsubmit="return confirm('Reset this exercise to the default definition? Your logged sets, training max and equipment link are kept.')">
 					@CSRF(p)
-					<button type="submit" class={ btnDanger }>
-						if d.Exercise.Overrides {
-							Reset to default
-						} else {
-							Delete
-						}
-					</button>
+					<button type="submit" class={ btnDanger }>Reset to default</button>
+				</form>
+			} else if d.Exercise.Custom() {
+				<form method="post" action={ templ.URL("/exercises/" + d.Exercise.Slug + "/delete") } onsubmit="return confirm('Delete this exercise? Logged sets, your training max, its history and the equipment link stay with the slug and come back if you create it again.')">
+					@CSRF(p)
+					<button type="submit" class={ btnDanger }>Delete</button>
 				</form>
 			}
 		</div>
@@ -155,9 +154,12 @@ templ ExerciseDetailPage(p Page, d ExerciseDetail) {
 					}
 				</option>
 				for _, e := range d.Equipment {
-					<option value={ e.ID } selected?={ d.Settings.EquipmentID == e.ID }>{ e.Name } ({ Label(e.Spec.Kind) })</option>
+					if e.Spec.Kind == d.Exercise.EquipmentKind {
+						<option value={ e.ID } selected?={ d.Settings.EquipmentID == e.ID }>{ e.Name }</option>
+					}
 				}
 			</select>
+			@fieldError(d.Errors, "equipment_id")
 		</label>
 		<label class={ label }>
 			Training max ({ p.Identity.User.Unit })
