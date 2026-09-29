@@ -143,7 +143,10 @@ CREATE TABLE sessions (
   started_at      TEXT    NOT NULL,
   finished_at     TEXT,
   notes           TEXT    NOT NULL DEFAULT '',
-  updated_at      TEXT    NOT NULL
+  updated_at      TEXT    NOT NULL,
+  -- When the notes were last edited (the editing device's clock), NULL before
+  -- the first edit. Notes edits race only against each other.
+  notes_updated_at TEXT
 );
 
 CREATE INDEX sessions_user_started ON sessions (user_id, started_at);

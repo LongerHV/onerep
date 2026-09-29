@@ -25,7 +25,6 @@ Known issues, deferred on purpose: each was found in a milestone's final review 
 
 ## Training and companion mode
 
-- **Notes from a slow phone clock are dropped.** `SetSessionNotes` compares the client's `updated_at` with `sessions.updated_at`, which is stamped by the server at start. A phone that is behind by more than the time since the start gets its notes Ignored but reported as applied. Fix: compare only against earlier notes edits. (`internal/store/sessions.go`)
 - **Server-side deletes don't reach an open companion.** A set deleted in history or on another device stays "done" locally. Fix: in `mergeServerSets`, drop synced local sets that are absent from the server and not in the outbox. (`companion-core.js`)
 - **Local state and the outbox are written in separate IndexedDB transactions.** A tab killed between them keeps a set locally that never syncs, and `tx()` has no `onabort`, so a quota abort hangs. Fix: one readwrite transaction over both stores, and reject on abort. (`companion.js`)
 - **Wake lock and audio aren't released on finish.** The screen stays on after "Finish" until you navigate away, and each companion's `AudioContext` is never closed. (`companion.js`)
