@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -120,6 +121,17 @@ func TestRequireUserAPIGetsUnauthorized(t *testing.T) {
 	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/stats/muscles", nil))
 	if rec.Code != http.StatusUnauthorized || rec.Header().Get("Location") != "" {
 		t.Fatalf("GET /api/… without a session = %d (Location %q), want 401", rec.Code, rec.Header().Get("Location"))
+	}
+	// Spec §16: JSON endpoints answer errors as {"error", "request_id"}.
+	if ct := rec.Header().Get("Content-Type"); !strings.HasPrefix(ct, "application/json") {
+		t.Fatalf("401 Content-Type = %q, want application/json", ct)
+	}
+	var body map[string]string
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil || body["error"] == "" {
+		t.Fatalf("401 body = %q (%v), want {\"error\": …}", rec.Body, err)
+	}
+	if _, ok := body["request_id"]; !ok {
+		t.Fatalf("401 body = %q, want a request_id", rec.Body)
 	}
 	rec = httptest.NewRecorder()
 	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/history", nil))
