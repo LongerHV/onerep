@@ -3,7 +3,9 @@ package plan
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	_ "embed"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -32,12 +34,12 @@ type Store interface {
 	PlanVersions(ctx context.Context, userID, planID string) ([]store.PlanVersion, error)
 	PlanVersionByID(ctx context.Context, userID, versionID string) (store.PlanVersion, error)
 	ActivePlanVersion(ctx context.Context, userID, planID string) (store.PlanVersion, error)
-	ActivateVersion(ctx context.Context, userID, versionID, name string) error
+	ActivateVersion(ctx context.Context, userID, versionID string, check func(doc []byte) (name string, err error)) error
 	DeleteDraft(ctx context.Context, userID, versionID string) error
 	ActivePlan(ctx context.Context, userID string) (store.ActivePlan, error)
 	SetActivePlan(ctx context.Context, userID string, a store.ActivePlan) error
 	ClearActivePlan(ctx context.Context, userID string) error
-	UpdateDraftVersion(ctx context.Context, userID, versionID string, doc []byte, source, note string) (store.PlanVersion, error)
+	UpdateDraftVersion(ctx context.Context, userID, versionID, name string, doc []byte, source, note string) (store.PlanVersion, error)
 }
 
 // Exercises is what plans need from the catalog. *exercise.Service implements it.
@@ -60,6 +62,23 @@ type Service struct {
 
 // ErrNoActiveVersion is returned when following a plan that has only drafts.
 var ErrNoActiveVersion = errors.New("the plan has no active version yet")
+
+// ErrDocChanged refuses activating a version whose document is not the one
+// the user reviewed (the AI replaced the draft in the meantime).
+var ErrDocChanged = errors.New("the version changed since it was reviewed")
+
+// ErrArchived refuses new or changed versions of an archived plan.
+var ErrArchived = errors.New("the plan is archived; restore it first")
+
+// ErrVersionNotInPlan refuses a draft replacement whose plan id names another plan.
+var ErrVersionNotInPlan = errors.New("the version belongs to another plan")
+
+// DocHash identifies a stored document, so a page can tell the server which
+// document it showed.
+func DocHash(raw []byte) string {
+	sum := sha256.Sum256(raw)
+	return hex.EncodeToString(sum[:])
+}
 
 // Save statuses.
 const (
@@ -147,12 +166,28 @@ func (s *Service) Save(ctx context.Context, user store.User, planID string, raw 
 	if ps.HasErrors() {
 		return store.PlanVersion{}, false, ps
 	}
+	if err := s.writable(ctx, user, planID); err != nil {
+		return store.PlanVersion{}, false, err
+	}
 	v, err := s.Store.SavePlanVersion(ctx, user.ID, planID, doc.Name, pinUnit(raw, doc, user.Unit), status, source, note)
 	if err != nil || status != SaveActivate {
 		return v, false, err
 	}
 	reset, err := s.fitCursor(ctx, user, planID, doc)
 	return v, reset, err
+}
+
+// writable checks that planID is the user's and takes new versions: an
+// archived plan is read-only until restored.
+func (s *Service) writable(ctx context.Context, user store.User, planID string) error {
+	p, err := s.Store.PlanByID(ctx, user.ID, planID)
+	if err != nil {
+		return err
+	}
+	if p.Archived {
+		return ErrArchived
+	}
+	return nil
 }
 
 // compact stores documents without insignificant whitespace but keeps key order.
@@ -273,18 +308,25 @@ func (s *Service) Version(ctx context.Context, user store.User, versionID string
 	return s.Store.PlanVersionByID(ctx, user.ID, versionID)
 }
 
-// Activate makes a version active. It reports whether the cursor of the
-// followed plan had to be reset because its day no longer exists.
-func (s *Service) Activate(ctx context.Context, user store.User, versionID string) (bool, error) {
+// Activate makes a version active, provided its document still has docHash
+// (the DocHash of the document the user reviewed); otherwise it returns
+// ErrDocChanged. It reports whether the cursor of the followed plan had to
+// be reset because its day no longer exists.
+func (s *Service) Activate(ctx context.Context, user store.User, versionID, docHash string) (bool, error) {
+	var doc Doc
+	err := s.Store.ActivateVersion(ctx, user.ID, versionID, func(raw []byte) (string, error) {
+		if DocHash(raw) != docHash {
+			return "", ErrDocChanged
+		}
+		var err error
+		doc, err = Decode(raw)
+		return doc.Name, err
+	})
+	if err != nil {
+		return false, err
+	}
 	v, err := s.Store.PlanVersionByID(ctx, user.ID, versionID)
 	if err != nil {
-		return false, err
-	}
-	doc, err := Decode(v.Doc)
-	if err != nil {
-		return false, err
-	}
-	if err := s.Store.ActivateVersion(ctx, user.ID, versionID, doc.Name); err != nil {
 		return false, err
 	}
 	return s.fitCursor(ctx, user, v.PlanID, doc)
@@ -449,6 +491,8 @@ type Comparison struct {
 	// ResetsCursor is true when activating Target would move the followed
 	// plan back to week 1, day 1.
 	ResetsCursor bool
+	// DocHash identifies the Target document shown; Activate takes it back.
+	DocHash string
 }
 
 // DayChange is the prescription diff of one (week, day name).
@@ -464,7 +508,7 @@ func (s *Service) Compare(ctx context.Context, user store.User, versionID string
 	if err != nil {
 		return Comparison{}, err
 	}
-	cmp := Comparison{Target: target}
+	cmp := Comparison{Target: target, DocHash: DocHash(target.Doc)}
 	var baseDoc Doc
 	var baseRaw []byte
 	if base, err := s.Store.ActivePlanVersion(ctx, user.ID, target.PlanID); err == nil {
@@ -613,14 +657,23 @@ func (s *Service) SaveDraft(ctx context.Context, user store.User, in DraftInput)
 		if current, err = s.Store.PlanVersionByID(ctx, user.ID, in.VersionID); err != nil {
 			return Draft{}, err
 		}
+		if in.PlanID != "" && in.PlanID != current.PlanID {
+			return Draft{}, ErrVersionNotInPlan
+		}
+		if err = s.writable(ctx, user, current.PlanID); err != nil {
+			return Draft{}, err
+		}
 		if current.Status == store.PlanDraft && current.Source != in.Source {
 			return Draft{}, ErrForeignDraft
 		}
-		d.Version, err = s.Store.UpdateDraftVersion(ctx, user.ID, in.VersionID, raw, in.Source, in.Note)
+		d.Version, err = s.Store.UpdateDraftVersion(ctx, user.ID, in.VersionID, doc.Name, raw, in.Source, in.Note)
 		if err == nil {
 			d.Plan, err = s.Store.PlanByID(ctx, user.ID, d.Version.PlanID)
 		}
 	case in.PlanID != "":
+		if err = s.writable(ctx, user, in.PlanID); err != nil {
+			return Draft{}, err
+		}
 		d.Version, err = s.Store.SavePlanVersion(ctx, user.ID, in.PlanID, doc.Name, raw, SaveDraft, in.Source, in.Note)
 		if err == nil {
 			d.Plan, err = s.Store.PlanByID(ctx, user.ID, in.PlanID)

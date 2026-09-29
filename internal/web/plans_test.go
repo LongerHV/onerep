@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/LongerHV/onerep/internal/auth"
 	"github.com/LongerHV/onerep/internal/exercise"
 	"github.com/LongerHV/onerep/internal/plan"
 )
@@ -114,7 +115,7 @@ func TestReviewDraftThatResetsCursor(t *testing.T) {
 	if !strings.Contains(cmp, "starts the plan over at week 1") || !strings.Contains(cmp, "Week 2 · Upper") {
 		t.Fatalf("comparison:\n%s", cmp)
 	}
-	resp, _ = post(t, c, srv.URL+"/plans/"+id+"/versions/"+m[1]+"/activate", csrf, nil)
+	resp, _ = post(t, c, srv.URL+"/plans/"+id+"/versions/"+m[1]+"/activate", csrf, url.Values{"doc_hash": {docHash(t, cmp)}})
 	if resp.Header.Get("Location") != "/plans/"+id+"?reset" {
 		t.Fatalf("activate redirect: %s", resp.Header.Get("Location"))
 	}
@@ -123,6 +124,73 @@ func TestReviewDraftThatResetsCursor(t *testing.T) {
 	}
 	if home := read(t, mustGet(t, c, srv.URL+"/")); !strings.Contains(home, "week 1 of 1") {
 		t.Fatal("cursor not reset")
+	}
+}
+
+// docHash is the hash of the reviewed document that a compare page posts.
+func docHash(t *testing.T, page string) string {
+	t.Helper()
+	m := regexp.MustCompile(`name="doc_hash" value="([0-9a-f]+)"`).FindStringSubmatch(page)
+	if m == nil {
+		t.Fatalf("compare page has no doc_hash:\n%s", page)
+	}
+	return m[1]
+}
+
+// If the AI replaces a draft while its compare page is open, Activate takes
+// the user back to the refreshed comparison instead of activating unseen changes.
+func TestActivateRefusesADraftChangedAfterReview(t *testing.T) {
+	srv, c, db := newAppDB(t, "alice")
+	csrf := session(t, srv, c)
+	ctx := context.Background()
+	alice, err := db.UpsertOIDCUser(ctx, auth.DevIssuer, "alice", "alice@localhost", "alice")
+	if err != nil {
+		t.Fatal(err)
+	}
+	plans := &plan.Service{Store: db, Exercises: &exercise.Service{Store: db}}
+	d, err := plans.SaveDraft(ctx, alice, plan.DraftInput{Doc: []byte(starter), Source: "mcp"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	compare := srv.URL + "/plans/" + d.Plan.ID + "/versions/" + d.Version.ID + "/compare"
+	reviewed := docHash(t, read(t, mustGet(t, c, compare)))
+
+	changed := strings.Replace(starter, `"weeks": 4`, `"weeks": 1`, 1)
+	changed = regexp.MustCompile(`\[(\d+(?:\.\d+)?), [^\]]*\]`).ReplaceAllString(changed, "$1")
+	if _, err := plans.SaveDraft(ctx, alice, plan.DraftInput{VersionID: d.Version.ID, Doc: []byte(changed), Source: "mcp"}); err != nil {
+		t.Fatal(err)
+	}
+	activate := srv.URL + "/plans/" + d.Plan.ID + "/versions/" + d.Version.ID + "/activate"
+	resp, _ := post(t, c, activate, csrf, url.Values{"doc_hash": {reviewed}})
+	if resp.StatusCode != http.StatusSeeOther || resp.Header.Get("Location") != "/plans/"+d.Plan.ID+"/versions/"+d.Version.ID+"/compare?changed" {
+		t.Fatalf("activating a changed draft: %d %q", resp.StatusCode, resp.Header.Get("Location"))
+	}
+	if v, _ := plans.Version(ctx, alice, d.Version.ID); v.Status != "draft" {
+		t.Fatalf("changed draft was activated: %+v", v)
+	}
+	page := read(t, mustGet(t, c, compare+"?changed"))
+	if !strings.Contains(page, "changed since you opened it") {
+		t.Fatalf("compare page doesn't explain the refusal:\n%s", page)
+	}
+	resp, _ = post(t, c, activate, csrf, url.Values{"doc_hash": {docHash(t, page)}})
+	if resp.Header.Get("Location") != "/plans/"+d.Plan.ID {
+		t.Fatalf("activating the reviewed draft: %d %q", resp.StatusCode, resp.Header.Get("Location"))
+	}
+}
+
+// Archived plans are read-only: no Edit button, and saving is refused.
+func TestArchivedPlanCannotBeEdited(t *testing.T) {
+	srv, c := newApp(t, "alice")
+	csrf := session(t, srv, c)
+	resp, _ := post(t, c, srv.URL+"/plans", csrf, url.Values{"doc": {starter}, "action": {"activate"}})
+	id := planID(t, resp)
+	post(t, c, srv.URL+"/plans/"+id+"/archive", csrf, url.Values{"archived": {"1"}})
+	if detail := read(t, mustGet(t, c, srv.URL+"/plans/"+id)); strings.Contains(detail, "/plans/"+id+"/edit") {
+		t.Fatal("archived plan offers Edit")
+	}
+	resp, body := post(t, c, srv.URL+"/plans/"+id, csrf, url.Values{"doc": {starter}, "action": {"draft"}})
+	if resp.StatusCode != http.StatusConflict || !strings.Contains(body, "Restore") {
+		t.Fatalf("saving an archived plan: %d\n%s", resp.StatusCode, body)
 	}
 }
 

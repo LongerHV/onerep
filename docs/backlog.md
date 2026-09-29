@@ -41,11 +41,6 @@ Known issues, deferred on purpose: each was found in a milestone's final review 
 - **The PR banner goes stale.** "New PR: …" stays after that set is edited below the record, deleted, or the workout is finished, until the next set is logged. Fix: recompute it in `render()` from the last logged set. (`companion.js`)
 - **"No working sets logged yet" is keyed on the 1–12 rep table,** so someone who only logged sets above 12 reps sees it. A `bw_reps` set saved from the history form with an empty weight stores NULL, where the companion stores 0, so it drops out of PRs. (`views/exercises.templ`, `internal/web/history.go`)
 
-## MCP
-
-- **A draft can change between review and activation.** If the AI replaces a draft while the user has its compare page open, Activate takes the new document. `Service.Activate` also reads the doc outside its transaction. Fix: post a hash of the rendered doc and refuse on mismatch. (`internal/plan/service.go`, compare page)
-- **`save_plan_draft` loose ends:** `plan_id` is ignored when `version_id` is given (even if it names another plan); archived plans accept drafts; replacing the only draft of a draft-only plan doesn't rename the plan.
-
 ## Plan form editor
 
 - **Real exercise search.** The exercise select is a native select (type-ahead only), not the spec's "searchable select". The user accepted this for now (2026-09-26); add a search field later. (`definitions.slug` enum, `plan-form-theme.js`)
