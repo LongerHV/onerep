@@ -28,3 +28,35 @@ func TestBackupMissingDatabaseFails(t *testing.T) {
 		}
 	}
 }
+
+// clearServerEnv unsets everything the serve command needs beyond the database.
+func clearServerEnv(t *testing.T) {
+	for _, k := range []string{"ONEREP_ENV", "ONEREP_DEV_USER", "ONEREP_BASE_URL",
+		"ONEREP_OIDC_ISSUER", "ONEREP_OIDC_CLIENT_ID", "ONEREP_OIDC_CLIENT_SECRET"} {
+		t.Setenv(k, "")
+	}
+}
+
+// migrate runs with nothing but the database path: no base URL, no OIDC.
+func TestMigrateNeedsOnlyTheDatabase(t *testing.T) {
+	clearServerEnv(t)
+	db := filepath.Join(t.TempDir(), "onerep.db")
+	t.Setenv("ONEREP_DB", db)
+
+	if err := run(context.Background(), []string{"migrate"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(db); err != nil {
+		t.Fatalf("database not created: %v", err)
+	}
+}
+
+func TestServeRequiresServerSettings(t *testing.T) {
+	clearServerEnv(t)
+	t.Setenv("ONEREP_DB", filepath.Join(t.TempDir(), "onerep.db"))
+
+	err := run(context.Background(), []string{"serve"})
+	if err == nil || !strings.Contains(err.Error(), "ONEREP_BASE_URL") {
+		t.Fatalf("want ONEREP_BASE_URL error, got %v", err)
+	}
+}

@@ -35,6 +35,12 @@ commands:
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	// Restore default signal handling once shutdown starts, so a second
+	// SIGTERM or Ctrl-C kills a shutdown that hangs.
+	go func() {
+		<-ctx.Done()
+		stop()
+	}()
 	if err := run(ctx, os.Args[1:]); err != nil {
 		slog.Error("fatal", "err", err)
 		os.Exit(1)
@@ -55,6 +61,9 @@ func run(ctx context.Context, args []string) error {
 
 	switch cmd {
 	case "serve":
+		if err := cfg.ValidateServe(); err != nil {
+			return err
+		}
 		return serve(ctx, cfg)
 	case "migrate":
 		return store.Migrate(cfg.DBPath)

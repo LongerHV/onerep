@@ -75,15 +75,29 @@ func Load(getenv func(string) string) (Config, error) {
 	if c.BaseURL == "" && c.Dev() {
 		c.BaseURL = "http://localhost:8080"
 	}
-	if c.BaseURL == "" {
-		return Config{}, errors.New("ONEREP_BASE_URL is required")
-	}
-	if u, err := url.Parse(c.BaseURL); err != nil || u.Scheme == "" || u.Host == "" {
-		return Config{}, fmt.Errorf("ONEREP_BASE_URL must be an absolute URL, got %q", c.BaseURL)
-	}
 
 	if c.DevUser != "" && !c.Dev() {
 		return Config{}, errors.New("ONEREP_DEV_USER is only allowed with ONEREP_ENV=dev")
+	}
+
+	return c, nil
+}
+
+// ValidateServe checks the settings only the web server needs: the public
+// base URL and authentication. Maintenance subcommands (migrate, backup) skip
+// it, so a host-side cron backup doesn't need the OIDC client secret.
+func (c Config) ValidateServe() error {
+	if c.BaseURL == "" {
+		return errors.New("ONEREP_BASE_URL is required")
+	}
+	u, err := url.Parse(c.BaseURL)
+	if err != nil || u.Scheme == "" || u.Host == "" {
+		return fmt.Errorf("ONEREP_BASE_URL must be an absolute URL, got %q", c.BaseURL)
+	}
+	// Routes, assets and the cookie path are absolute, so onerep must be
+	// served at the root of its host.
+	if (u.Path != "" && u.Path != "/") || u.RawQuery != "" || u.Fragment != "" {
+		return fmt.Errorf("ONEREP_BASE_URL must not have a path, query or fragment: onerep must be served at the root of its host, got %q", c.BaseURL)
 	}
 
 	// The client secret is optional: without it onerep is a public client and
@@ -91,11 +105,10 @@ func Load(getenv func(string) string) (Config, error) {
 	oidcSet := c.OIDC.Issuer != "" || c.OIDC.ClientID != "" || c.OIDC.ClientSecret != ""
 	oidcComplete := c.OIDC.Issuer != "" && c.OIDC.ClientID != ""
 	if oidcSet && !oidcComplete {
-		return Config{}, errors.New("ONEREP_OIDC_ISSUER and ONEREP_OIDC_CLIENT_ID must both be set (ONEREP_OIDC_CLIENT_SECRET is optional: without it onerep is a public client)")
+		return errors.New("ONEREP_OIDC_ISSUER and ONEREP_OIDC_CLIENT_ID must both be set (ONEREP_OIDC_CLIENT_SECRET is optional: without it onerep is a public client)")
 	}
 	if !oidcComplete && c.DevUser == "" {
-		return Config{}, errors.New("configure OIDC (ONEREP_OIDC_*) or, in dev, ONEREP_DEV_USER")
+		return errors.New("configure OIDC (ONEREP_OIDC_*) or, in dev, ONEREP_DEV_USER")
 	}
-
-	return c, nil
+	return nil
 }
