@@ -86,10 +86,12 @@ func Load(getenv func(string) string) (Config, error) {
 		return Config{}, errors.New("ONEREP_DEV_USER is only allowed with ONEREP_ENV=dev")
 	}
 
+	// The client secret is optional: without it onerep is a public client and
+	// authenticates the code exchange with PKCE alone.
 	oidcSet := c.OIDC.Issuer != "" || c.OIDC.ClientID != "" || c.OIDC.ClientSecret != ""
-	oidcComplete := c.OIDC.Issuer != "" && c.OIDC.ClientID != "" && c.OIDC.ClientSecret != ""
+	oidcComplete := c.OIDC.Issuer != "" && c.OIDC.ClientID != ""
 	if oidcSet && !oidcComplete {
-		return Config{}, errors.New("ONEREP_OIDC_ISSUER, ONEREP_OIDC_CLIENT_ID and ONEREP_OIDC_CLIENT_SECRET must all be set")
+		return Config{}, errors.New("ONEREP_OIDC_ISSUER and ONEREP_OIDC_CLIENT_ID must both be set (ONEREP_OIDC_CLIENT_SECRET is optional: without it onerep is a public client)")
 	}
 	if !oidcComplete && c.DevUser == "" {
 		return Config{}, errors.New("configure OIDC (ONEREP_OIDC_*) or, in dev, ONEREP_DEV_USER")

@@ -57,7 +57,8 @@ func TestLoadErrors(t *testing.T) {
 	}{
 		"bad env":           {with(oidcEnv, "ONEREP_ENV", "staging"), "ONEREP_ENV"},
 		"dev user in prod":  {with(oidcEnv, "ONEREP_DEV_USER", "alice"), "ONEREP_DEV_USER"},
-		"partial oidc":      {with(oidcEnv, "ONEREP_OIDC_CLIENT_SECRET", ""), "must all be set"},
+		"partial oidc":      {with(oidcEnv, "ONEREP_OIDC_CLIENT_ID", ""), "ONEREP_OIDC_ISSUER and ONEREP_OIDC_CLIENT_ID"},
+		"secret only":       {with(with(oidcEnv, "ONEREP_OIDC_ISSUER", ""), "ONEREP_OIDC_CLIENT_ID", ""), "ONEREP_OIDC_ISSUER and ONEREP_OIDC_CLIENT_ID"},
 		"no auth at all":    {map[string]string{"ONEREP_ENV": "dev"}, "configure OIDC"},
 		"missing base url":  {with(oidcEnv, "ONEREP_BASE_URL", ""), "ONEREP_BASE_URL is required"},
 		"relative base url": {with(oidcEnv, "ONEREP_BASE_URL", "gym.example.com"), "absolute URL"},
@@ -70,5 +71,16 @@ func TestLoadErrors(t *testing.T) {
 				t.Fatalf("want error containing %q, got %v", tc.want, err)
 			}
 		})
+	}
+}
+
+// Without a client secret, onerep is a public OIDC client (PKCE only).
+func TestLoadPublicClient(t *testing.T) {
+	c, err := Load(env(with(oidcEnv, "ONEREP_OIDC_CLIENT_SECRET", "")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.OIDC.Issuer == "" || c.OIDC.ClientID != "onerep" || c.OIDC.ClientSecret != "" {
+		t.Fatalf("OIDC = %+v", c.OIDC)
 	}
 }

@@ -21,12 +21,23 @@ docker run -p 8080:8080 -v ./data:/data --user "$(id -u):$(id -g)" \
 Register `${ONEREP_BASE_URL}/auth/callback` as the redirect URI at your OIDC
 provider. See `deploy/compose.yaml` for a compose example.
 
+The client secret is optional. Leave `ONEREP_OIDC_CLIENT_SECRET` unset to run onerep as a
+*public* client: the login code is then exchanged with PKCE (S256) alone, so register the
+client as public at your provider (in Authelia: `public: true`,
+`token_endpoint_auth_method: none`, `require_pkce: true`). A confidential client (with a
+secret) is the stronger choice when your provider and secret handling allow it.
+
+onerep talks to the provider from the server: at startup (discovery), and on every login
+(token exchange, signing keys). The container must reach the issuer URL exactly as the
+provider announces it, over TLS the container trusts.
+
 | Variable | Default | Meaning |
 |---|---|---|
 | `ONEREP_DB` | `./onerep.db` | SQLite database path |
 | `ONEREP_LISTEN` | `:8080` | Listen address |
 | `ONEREP_BASE_URL` | — (dev: `http://localhost:8080`) | Public URL; `https` enables Secure cookies |
-| `ONEREP_OIDC_ISSUER` / `_CLIENT_ID` / `_CLIENT_SECRET` | — | OIDC provider |
+| `ONEREP_OIDC_ISSUER` / `_CLIENT_ID` | — | OIDC provider (issuer URL exactly as announced, client ID) |
+| `ONEREP_OIDC_CLIENT_SECRET` | — | Client secret; unset for a public client (PKCE only) |
 | `ONEREP_AUTO_MIGRATE` | `true` | Apply migrations on startup |
 | `ONEREP_ENV` | `prod` | `dev` enables debug logs and allows `ONEREP_DEV_USER` |
 | `ONEREP_DEV_USER` | — | Dev only: sign everyone in as this user, no IdP |

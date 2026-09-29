@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/cookiejar"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 
@@ -135,5 +136,67 @@ func TestOIDCLoginWithOnlySubject(t *testing.T) {
 	}
 	if got := body(t, resp); resp.StatusCode != http.StatusOK || got != "only-sub" {
 		t.Fatalf("got %d %q", resp.StatusCode, got)
+	}
+}
+
+// A public client (no secret) authenticates at the token endpoint with its
+// client_id and the PKCE verifier only. mockoidc always wants a secret, so
+// a proxy records what onerep sends, then adds the secret for mockoidc.
+func TestOIDCPublicClientLoginFlow(t *testing.T) {
+	m, err := mockoidc.Run()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = m.Shutdown() })
+	var sent url.Values
+	var authHeader string
+	proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = r.ParseForm()
+		sent, authHeader = r.PostForm, r.Header.Get("Authorization")
+		form := url.Values{}
+		for k, v := range r.PostForm {
+			form[k] = v
+		}
+		form.Set("client_secret", m.ClientSecret)
+		resp, err := http.PostForm(m.TokenEndpoint(), form)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadGateway)
+			return
+		}
+		defer resp.Body.Close()
+		w.Header().Set("Content-Type", resp.Header.Get("Content-Type"))
+		w.WriteHeader(resp.StatusCode)
+		_, _ = io.Copy(w, resp.Body)
+	}))
+	t.Cleanup(proxy.Close)
+
+	sessions := &Sessions{Store: storetest.New(t)}
+	mux := http.NewServeMux()
+	app := httptest.NewServer(sessions.Middleware(mux))
+	t.Cleanup(app.Close)
+	o, err := NewOIDC(context.Background(), m.Issuer(), m.ClientID, "", app.URL, sessions)
+	if err != nil {
+		t.Fatal(err)
+	}
+	o.oauth.Endpoint.TokenURL = proxy.URL
+	mux.HandleFunc("GET /auth/login", o.Login)
+	mux.HandleFunc("GET /auth/callback", o.Callback)
+	mux.Handle("GET /", RequireUser(whoami))
+	jar, _ := cookiejar.New(nil)
+	client := &http.Client{Jar: jar}
+
+	m.QueueUser(&mockoidc.MockUser{Subject: "u-pub", PreferredUsername: "pat"})
+	resp, err := client.Get(app.URL + "/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := body(t, resp); got != "pat" {
+		t.Fatalf("after login: %d %q", resp.StatusCode, got)
+	}
+	if authHeader != "" || sent.Has("client_secret") {
+		t.Errorf("a public client must not send a secret: Authorization %q, client_secret %q", authHeader, sent.Get("client_secret"))
+	}
+	if sent.Get("client_id") != m.ClientID || sent.Get("code_verifier") == "" {
+		t.Errorf("token request = %v, want client_id and the PKCE verifier", sent)
 	}
 }
