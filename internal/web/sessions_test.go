@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -156,6 +157,11 @@ func TestHistoryEditor(t *testing.T) {
 	if !strings.Contains(page, "Barbell Bench Press") || !strings.Contains(page, `value="80"`) {
 		t.Fatalf("history detail:\n%.600s", page)
 	}
+	// Times are sent in UTC for the browser to show in the user's timezone.
+	stamp := regexp.MustCompile(`<time datetime="\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ" data-local="(datetime|weekday)">[^<]* UTC</time>`)
+	if !stamp.MatchString(list) || !stamp.MatchString(page) {
+		t.Fatalf("history times are not <time data-local> in UTC:\n%s", list)
+	}
 
 	// Correct the weight (in the user's unit), add a set, delete it again.
 	edit := url.Values{"set_id": {setID}, "slug": {"barbell-bench-press"}, "kind": {"working"}, "group_pos": {"0"},
@@ -253,6 +259,44 @@ func TestHistoryAddedSetPlacement(t *testing.T) {
 	}
 	if sets[0].DoneAt == nil || !sets[0].DoneAt.Equal(sess.StartedAt) {
 		t.Fatalf("done_at = %v, want the session start %v", sets[0].DoneAt, sess.StartedAt)
+	}
+}
+
+// A superset is logged A, B, A, B; history shows each exercise once, in the
+// order first done, with all its sets.
+func TestHistoryGroupsSupersetsByExercise(t *testing.T) {
+	srv, c := newApp(t, "alice")
+	csrf := session(t, srv, c)
+	resp, _ := post(t, c, srv.URL+"/sessions", csrf, url.Values{"kind": {"adhoc"}})
+	id := regexp.MustCompile(`/sessions/([0-9a-f-]+)/live`).FindStringSubmatch(resp.Header.Get("Location"))[1]
+	var ops []string
+	now := time.Now().UTC()
+	for i, s := range []struct {
+		slug        string
+		ex, set, kg int
+	}{{"barbell-bench-press", 0, 0, 80}, {"barbell-row", 1, 0, 60}, {"barbell-bench-press", 0, 1, 82}, {"barbell-row", 1, 1, 62}} {
+		at := now.Add(time.Duration(i) * time.Minute).Format(time.RFC3339Nano)
+		op, _ := json.Marshal(map[string]any{"op_id": "01900000-0000-7000-8000-0000000001a" + strconv.Itoa(i), "op": "upsert_set", "payload": map[string]any{
+			"id": "01900000-0000-7000-8000-0000000001b" + strconv.Itoa(i), "session_id": id, "slug": s.slug, "group_pos": 0,
+			"exercise_pos": s.ex, "set_pos": s.set, "kind": "working", "weight_kg": s.kg, "reps": 8, "done_at": at, "updated_at": at}})
+		ops = append(ops, string(op))
+	}
+	if _, body := syncOps(t, c, srv.URL, csrf, `{"ops": [`+strings.Join(ops, ",")+`]}`); strings.Contains(body, "rejected") {
+		t.Fatalf("sync: %s", body)
+	}
+	page := read(t, mustGet(t, c, srv.URL+"/history/"+id))
+	bench, row := strings.Count(page, ">Barbell Bench Press</h2>"), strings.Count(page, ">Barbell Row</h2>")
+	if bench != 1 || row != 1 {
+		t.Fatalf("headings: bench %d, row %d, want 1 each", bench, row)
+	}
+	order := []string{">Barbell Bench Press</h2>", `value="80"`, `value="82"`, ">Barbell Row</h2>", `value="60"`, `value="62"`}
+	last := -1
+	for _, s := range order {
+		i := strings.Index(page, s)
+		if i < last {
+			t.Fatalf("%s out of order in:\n%s", s, page)
+		}
+		last = i
 	}
 }
 

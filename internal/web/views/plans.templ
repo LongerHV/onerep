@@ -52,7 +52,9 @@ templ PlanDetailPage(p Page, d PlanPage) {
 			}
 		</div>
 		<div class="flex flex-wrap gap-2">
-			<a href={ templ.URL("/plans/" + d.Plan.ID + "/edit") } class={ btnSecondary }>Edit</a>
+			if !d.Plan.Archived {
+				<a href={ templ.URL("/plans/" + d.Plan.ID + "/edit") } class={ btnSecondary }>Edit</a>
+			}
 			if !d.Following && !d.Plan.Archived {
 				<form method="post" action={ templ.URL("/plans/" + d.Plan.ID + "/follow") }>
 					@CSRF(p)
@@ -258,7 +260,9 @@ templ PlanVersionView(p Page, d PlanVersionPage) {
 	</details>
 }
 
-templ PlanComparePage(p Page, pl store.Plan, c plan.Comparison) {
+// PlanComparePage reviews a version before activation. changed is set when an
+// activation was refused because the draft changed after it was shown.
+templ PlanComparePage(p Page, pl store.Plan, c plan.Comparison, changed bool) {
 	<p class="text-sm"><a href={ templ.URL("/plans/" + pl.ID) } class="underline">{ pl.Name }</a></p>
 	<h1 class={ h1 }>
 		Version { strconv.Itoa(c.Target.Version) }
@@ -269,12 +273,18 @@ templ PlanComparePage(p Page, pl store.Plan, c plan.Comparison) {
 	if c.Target.Note != "" {
 		<p class="mt-1">{ c.Target.Note }</p>
 	}
+	if changed {
+		<p class="mt-4 rounded bg-amber-100 p-2 text-sm dark:bg-amber-950">
+			This draft changed since you opened it, so it was not activated. Review the changes below, then activate it again.
+		</p>
+	}
 	if c.Cursor != nil && c.Cursor.Kind != plan.CursorKept {
 		<p class="mt-4 rounded bg-amber-100 p-2 text-sm dark:bg-amber-950">{ cursorChange(*c.Cursor) }</p>
 	}
 	<div class="mt-4 flex gap-2">
 		<form method="post" action={ templ.URL("/plans/" + pl.ID + "/versions/" + c.Target.ID + "/activate") }>
 			@CSRF(p)
+			<input type="hidden" name="doc_hash" value={ c.DocHash }/>
 			<button type="submit" class={ btn }>Activate</button>
 		</form>
 		if c.Target.Status == store.PlanDraft {

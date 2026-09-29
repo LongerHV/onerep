@@ -42,6 +42,23 @@ export function formatValue(kind, value) {
   return String(value);
 }
 
+// draftError explains a per-week input whose text doesn't parse: the text
+// stays in the input, but the document keeps value until it's corrected.
+// week (1-based) is given when the field varies by week.
+export function draftError(kind, error, value, week) {
+  const kept = value === undefined || value === null ? "nothing here" : formatValue(kind, value);
+  return (week ? `W${week}: ` : "") + `${error}; the plan still has ${kept}`;
+}
+
+// fieldMessage is what a per-week field shows below its inputs: its own
+// draft errors, then the server's messages ("Warning: " marks a warning).
+// The field is amber only when every message is a warning.
+export function fieldMessage(drafts, server) {
+  const msgs = [...drafts, ...server.map((m) => m.replace(/^Warning: /, ""))];
+  const warning = drafts.length === 0 && server.length > 0 && server.every((m) => m.startsWith("Warning: "));
+  return { text: msgs.join(". "), warning };
+}
+
 // perWeekFrom turns a stored value into the field's state. A stored array
 // keeps its length: fields can be set before the plan's weeks is, and only a
 // change of weeks resizes (see resize).

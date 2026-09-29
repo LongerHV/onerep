@@ -71,6 +71,16 @@ templ SignedOut(p Page) {
 	<p class="mt-2"><a href="/auth/login" class="underline" hx-boost="false">Sign in again</a></p>
 }
 
+// LoginFailed is the page for a failed sign-in; loginURL starts it again.
+templ LoginFailed(p Page, message, loginURL, requestID string) {
+	<h1 class={ h1 }>Sign-in failed</h1>
+	<p class="mt-2">{ message }</p>
+	<p class="mt-2"><a href={ templ.SafeURL(loginURL) } class="underline" hx-boost="false">Sign in again</a></p>
+	if requestID != "" {
+		<p class="mt-4 text-sm text-zinc-500">Request ID: <code>{ requestID }</code></p>
+	}
+}
+
 templ Error(p Page, status int, message, requestID string) {
 	<h1 class={ h1 }>{ strconv.Itoa(status) }</h1>
 	<p class="mt-2">{ message }</p>

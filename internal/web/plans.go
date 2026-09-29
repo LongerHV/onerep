@@ -187,6 +187,8 @@ func (s *Server) planSave(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.renderEditor(w, r, http.StatusUnprocessableEntity, "Edit "+p.Name, id, doc, ps)
+	case errors.Is(err, plan.ErrArchived):
+		s.renderError(w, r, http.StatusConflict, "This plan is archived. Restore it before changing it.")
 	case err != nil:
 		s.fail(w, r, err)
 	default:
@@ -253,7 +255,7 @@ func (s *Server) planCompare(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
-	render(w, r, http.StatusOK, views.PlanComparePage(page(r, p.Name), p, cmp))
+	render(w, r, http.StatusOK, views.PlanComparePage(page(r, p.Name), p, cmp, r.URL.Query().Has("changed")))
 }
 
 func (s *Server) planActivate(w http.ResponseWriter, r *http.Request) {
@@ -262,7 +264,11 @@ func (s *Server) planActivate(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
-	moved, err := s.Plans.Activate(r.Context(), user(r), v.ID)
+	moved, err := s.Plans.Activate(r.Context(), user(r), v.ID, r.PostFormValue("doc_hash"))
+	if errors.Is(err, plan.ErrDocChanged) {
+		http.Redirect(w, r, "/plans/"+v.PlanID+"/versions/"+v.ID+"/compare?changed", http.StatusSeeOther)
+		return
+	}
 	if err != nil {
 		s.fail(w, r, err)
 		return

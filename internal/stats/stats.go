@@ -20,7 +20,7 @@ const MaxRepMax = 12
 
 // Store is the persistence the service needs. *store.DB implements it.
 type Store interface {
-	RepMaxes(ctx context.Context, userID, slug, excludeSessionID string) ([]store.RepMax, error)
+	RepMaxes(ctx context.Context, userID, slug, beforeSessionID string) ([]store.RepMax, error)
 	E1RMSeries(ctx context.Context, userID, slug string) ([]store.E1RMPoint, error)
 	SessionPRs(ctx context.Context, userID, sessionID string) (map[string]bool, error)
 	HardSets(ctx context.Context, userID string, from, to time.Time) ([]store.HardSet, error)
@@ -60,6 +60,7 @@ type ExerciseStats struct {
 	Exercise store.Exercise
 	Series   []Point
 	RepMaxes []store.RepMax // rep counts 1–MaxRepMax
+	Logged   bool           // any working or AMRAP set with a weight, at any reps
 }
 
 // ExerciseStats returns the e1RM series and rep maxes of one of the user's exercises.
@@ -83,6 +84,7 @@ func (s *Service) StatsOf(ctx context.Context, user store.User, ex store.Exercis
 	if err != nil {
 		return st, err
 	}
+	st.Logged = len(maxes) > 0
 	for _, m := range maxes {
 		if m.Reps <= MaxRepMax {
 			st.RepMaxes = append(st.RepMaxes, m)

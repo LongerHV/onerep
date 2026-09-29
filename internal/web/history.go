@@ -59,6 +59,9 @@ func (s *Server) historyData(r *http.Request, id string) (views.HistoryDetail, e
 	if d.PRs, err = s.Stats.SessionPRs(ctx, u, id); err != nil {
 		return d, err
 	}
+	// One heading per exercise, in the order first done: a superset's sets
+	// come interleaved (A, B, A, B) and read as A's sets, then B's.
+	group := map[string]int{} // slug → index in d.Groups
 	for _, set := range sets {
 		if _, ok := d.Exercises[set.Slug]; !ok {
 			ex, err := s.Exercises.Get(ctx, u.ID, set.Slug)
@@ -70,10 +73,13 @@ func (s *Server) historyData(r *http.Request, id string) (views.HistoryDetail, e
 			}
 			d.Exercises[set.Slug] = ex
 		}
-		if n := len(d.Groups); n == 0 || d.Groups[n-1].Slug != set.Slug || d.Groups[n-1].GroupPos != set.GroupPos {
-			d.Groups = append(d.Groups, views.HistoryGroup{Slug: set.Slug, GroupPos: set.GroupPos})
+		i, ok := group[set.Slug]
+		if !ok {
+			i = len(d.Groups)
+			group[set.Slug] = i
+			d.Groups = append(d.Groups, views.HistoryGroup{Slug: set.Slug})
 		}
-		d.Groups[len(d.Groups)-1].Sets = append(d.Groups[len(d.Groups)-1].Sets, set)
+		d.Groups[i].Sets = append(d.Groups[i].Sets, set)
 		d.NextGroupPos = max(d.NextGroupPos, set.GroupPos+1)
 	}
 	return d, nil

@@ -172,3 +172,22 @@ test("an alternatives list keeps its order", () => {
   assert.equal(f.listValue([]), undefined);
   assert.deepEqual(f.listValue(["b"]), ["b"]);
 });
+
+test("a draft error says what the plan still holds", () => {
+  assert.equal(f.draftError("reps", "enter reps like 5, 6-10 or AMRAP", 8),
+    "enter reps like 5, 6-10 or AMRAP; the plan still has 8");
+  assert.equal(f.draftError("percent", "enter a percentage like 75", 0.825, 2),
+    "W2: enter a percentage like 75; the plan still has 82.5");
+  assert.equal(f.draftError("count", "enter a whole number", undefined),
+    "enter a whole number; the plan still has nothing here");
+  assert.equal(f.draftError("count", "enter a whole number", null, 3),
+    "W3: enter a whole number; the plan still has nothing here");
+});
+
+test("a field's message combines its draft errors with the server's", () => {
+  assert.deepEqual(f.fieldMessage([], []), { text: "", warning: false });
+  assert.deepEqual(f.fieldMessage([], ["Warning: W1: long rest"]), { text: "W1: long rest", warning: true });
+  assert.deepEqual(f.fieldMessage([], ["too many", "Warning: odd"]), { text: "too many. odd", warning: false });
+  assert.deepEqual(f.fieldMessage(["enter a number; the plan still has 5"], ["Warning: odd"]),
+    { text: "enter a number; the plan still has 5. odd", warning: false });
+});
