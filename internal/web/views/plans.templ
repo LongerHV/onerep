@@ -269,10 +269,8 @@ templ PlanComparePage(p Page, pl store.Plan, c plan.Comparison) {
 	if c.Target.Note != "" {
 		<p class="mt-1">{ c.Target.Note }</p>
 	}
-	if c.ResetsCursor {
-		<p class="mt-4 rounded bg-amber-100 p-2 text-sm dark:bg-amber-950">
-			Your current day does not exist in this version: activating it starts the plan over at week 1, day 1.
-		</p>
+	if c.Cursor != nil && c.Cursor.Kind != plan.CursorKept {
+		<p class="mt-4 rounded bg-amber-100 p-2 text-sm dark:bg-amber-950">{ cursorChange(*c.Cursor) }</p>
 	}
 	<div class="mt-4 flex gap-2">
 		<form method="post" action={ templ.URL("/plans/" + pl.ID + "/versions/" + c.Target.ID + "/activate") }>

@@ -21,7 +21,8 @@ func planID(t *testing.T, resp *http.Response) string {
 	if resp.StatusCode != http.StatusSeeOther || !strings.HasPrefix(loc, "/plans/") {
 		t.Fatalf("expected redirect to a plan, got %d %q", resp.StatusCode, loc)
 	}
-	return strings.TrimSuffix(strings.TrimPrefix(loc, "/plans/"), "?reset")
+	id, _, _ := strings.Cut(strings.TrimPrefix(loc, "/plans/"), "?")
+	return id
 }
 
 func TestPlanEditorPage(t *testing.T) {
@@ -111,18 +112,56 @@ func TestReviewDraftThatResetsCursor(t *testing.T) {
 		t.Fatalf("draft not offered for review:\n%s", detail)
 	}
 	cmp := read(t, mustGet(t, c, srv.URL+"/plans/"+id+"/versions/"+m[1]+"/compare"))
-	if !strings.Contains(cmp, "starts the plan over at week 1") || !strings.Contains(cmp, "Week 2 · Upper") {
+	if !strings.Contains(cmp, "Week 4 doesn&#39;t exist in this version: the plan will count as complete.") || !strings.Contains(cmp, "Week 2 · Upper") {
 		t.Fatalf("comparison:\n%s", cmp)
 	}
 	resp, _ = post(t, c, srv.URL+"/plans/"+id+"/versions/"+m[1]+"/activate", csrf, nil)
-	if resp.Header.Get("Location") != "/plans/"+id+"?reset" {
+	if resp.Header.Get("Location") != "/plans/"+id+"?cursor=complete" {
 		t.Fatalf("activate redirect: %s", resp.Header.Get("Location"))
 	}
-	if page := read(t, mustGet(t, c, srv.URL+"/plans/"+id+"?reset")); !strings.Contains(page, "starts over at week 1") {
-		t.Fatal("reset notice missing")
+	if page := read(t, mustGet(t, c, srv.URL+"/plans/"+id+"?cursor=complete")); !strings.Contains(page, "the plan now counts as complete") {
+		t.Fatal("notice missing")
 	}
-	if home := read(t, mustGet(t, c, srv.URL+"/")); !strings.Contains(home, "week 1 of 1") {
-		t.Fatal("cursor not reset")
+	if home := read(t, mustGet(t, c, srv.URL+"/")); !strings.Contains(home, "You finished all 1 weeks") {
+		t.Fatal("plan not complete")
+	}
+
+	// Activating the 4-week version again keeps the finished plan complete.
+	resp, _ = post(t, c, srv.URL+"/plans/"+id, csrf, url.Values{"doc": {starter}, "action": {"draft"}})
+	if resp.StatusCode != http.StatusSeeOther {
+		t.Fatalf("save draft: %d", resp.StatusCode)
+	}
+	detail = read(t, mustGet(t, c, srv.URL+"/plans/"+id))
+	m = regexp.MustCompile(`/plans/` + id + `/versions/([0-9a-f-]+)/compare`).FindStringSubmatch(detail)
+	if cmp := read(t, mustGet(t, c, srv.URL+"/plans/"+id+"/versions/"+m[1]+"/compare")); !strings.Contains(cmp, "You finished this plan; it stays complete.") {
+		t.Fatalf("comparison:\n%s", cmp)
+	}
+	resp, _ = post(t, c, srv.URL+"/plans/"+id+"/versions/"+m[1]+"/activate", csrf, nil)
+	if resp.Header.Get("Location") != "/plans/"+id {
+		t.Fatalf("activate redirect: %s", resp.Header.Get("Location"))
+	}
+	if home := read(t, mustGet(t, c, srv.URL+"/")); !strings.Contains(home, "You finished all 4 weeks") {
+		t.Fatal("plan not complete")
+	}
+
+	// A version without the current day continues at the next one.
+	post(t, c, srv.URL+"/plan/choose", csrf, url.Values{"position": {"3:1"}})
+	lowerOnce := strings.Replace(starter, `"name": "Lower",`, `"name": "Lower", "only_weeks": [1, 2],`, 1)
+	resp, _ = post(t, c, srv.URL+"/plans/"+id, csrf, url.Values{"doc": {lowerOnce}, "action": {"draft"}})
+	if resp.StatusCode != http.StatusSeeOther {
+		t.Fatalf("save draft: %d", resp.StatusCode)
+	}
+	detail = read(t, mustGet(t, c, srv.URL+"/plans/"+id))
+	m = regexp.MustCompile(`/plans/` + id + `/versions/([0-9a-f-]+)/compare`).FindStringSubmatch(detail)
+	if cmp := read(t, mustGet(t, c, srv.URL+"/plans/"+id+"/versions/"+m[1]+"/compare")); !strings.Contains(cmp, "Day 2 of week 3 doesn&#39;t exist in this version: you&#39;ll continue at week 4, day 1.") {
+		t.Fatalf("comparison:\n%s", cmp)
+	}
+	resp, _ = post(t, c, srv.URL+"/plans/"+id+"/versions/"+m[1]+"/activate", csrf, nil)
+	if resp.Header.Get("Location") != "/plans/"+id+"?cursor=moved" {
+		t.Fatalf("activate redirect: %s", resp.Header.Get("Location"))
+	}
+	if page := read(t, mustGet(t, c, srv.URL+"/plans/"+id+"?cursor=moved")); !strings.Contains(page, "you continue at week 4, day 1") {
+		t.Fatalf("notice missing:\n%s", page)
 	}
 }
 

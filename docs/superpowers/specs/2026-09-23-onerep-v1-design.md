@@ -199,7 +199,7 @@ Plan preview in the editor shows every week × day expanded with resolved loads.
 - "Next workout" = cursor position. Starting it creates a session for (week, day). Finishing it advances the cursor to the next applicable day; after the last day of a week, to day 0 of the next week.
 - Past the final week the plan is "complete": the home screen offers to restart it or ask the AI for the next block. Restarting resets the cursor.
 - The user can skip the current day (advance without a session) or start any (week, day) manually; starting a manual day moves the cursor to it.
-- Activating a new version of the already-active plan keeps the cursor if the (week, day) still exists in the new version, otherwise resets it to week 1, day 0 and warns in the UI.
+- Activating a new version of the already-active plan never restarts it. The cursor stays if the (week, day) still exists; a finished plan stays complete; a week past the new last week makes the plan complete; a missing day moves to the next day that exists (possibly completing the plan). The comparison page says which will happen before activating.
 - Ad-hoc sessions (`plan_version_id` NULL) never move the cursor; the user adds exercises by slug during the session.
 
 ## 9. Companion mode and offline sync

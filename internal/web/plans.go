@@ -13,8 +13,18 @@ import (
 	"github.com/LongerHV/onerep/internal/web/views"
 )
 
-// cursorResetNotice is shown when a new version no longer has the user's day.
-const cursorResetNotice = "Your current day does not exist in the new version, so the plan starts over at week 1, day 1."
+// cursorNotice explains, after a version change, where the cursor went when
+// the user's day no longer existed (?cursor=complete|moved).
+func cursorNotice(kind string, week, day int) string {
+	switch kind {
+	case "complete":
+		return "Your current day doesn't exist in this version, so the plan now counts as complete."
+	case "moved":
+		return "Your current day doesn't exist in this version, so you continue at week " + strconv.Itoa(week) +
+			", day " + strconv.Itoa(day+1) + "."
+	}
+	return ""
+}
 
 func (s *Server) planRoutes(r chi.Router) {
 	r.Get("/plans", s.planList)
@@ -133,8 +143,8 @@ func (s *Server) planDetail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	d := views.PlanPage{Plan: p, Versions: versions, Following: next != nil && next.Plan.ID == p.ID}
-	if r.URL.Query().Has("reset") {
-		d.Notice = cursorResetNotice
+	if d.Following {
+		d.Notice = cursorNotice(r.URL.Query().Get("cursor"), next.Week, next.Day)
 	}
 	render(w, r, http.StatusOK, views.PlanDetailPage(page(r, p.Name), d))
 }
@@ -167,7 +177,7 @@ func (s *Server) planEdit(w http.ResponseWriter, r *http.Request) {
 func (s *Server) planSave(w http.ResponseWriter, r *http.Request) {
 	ctx, u, id := r.Context(), user(r), chi.URLParam(r, "id")
 	doc := r.PostFormValue("doc")
-	_, reset, err := s.Plans.Save(ctx, u, id, []byte(doc), saveStatus(r), "web", "")
+	_, moved, err := s.Plans.Save(ctx, u, id, []byte(doc), saveStatus(r), "web", "")
 	var ps plan.Problems
 	switch {
 	case errors.As(err, &ps):
@@ -180,14 +190,20 @@ func (s *Server) planSave(w http.ResponseWriter, r *http.Request) {
 	case err != nil:
 		s.fail(w, r, err)
 	default:
-		s.redirectToPlan(w, r, id, reset)
+		s.redirectToPlan(w, r, id, moved)
 	}
 }
 
-func (s *Server) redirectToPlan(w http.ResponseWriter, r *http.Request, id string, reset bool) {
+// redirectToPlan shows the plan after a save or activation, with a notice
+// when the cursor had to leave a day the new version doesn't have.
+func (s *Server) redirectToPlan(w http.ResponseWriter, r *http.Request, id string, m plan.CursorMove) {
 	target := "/plans/" + id
-	if reset {
-		target += "?reset"
+	switch {
+	case !m.Moved() || m.Kind == plan.CursorStaysComplete:
+	case m.Complete:
+		target += "?cursor=complete"
+	default:
+		target += "?cursor=moved"
 	}
 	http.Redirect(w, r, target, http.StatusSeeOther)
 }
@@ -246,12 +262,12 @@ func (s *Server) planActivate(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
-	reset, err := s.Plans.Activate(r.Context(), user(r), v.ID)
+	moved, err := s.Plans.Activate(r.Context(), user(r), v.ID)
 	if err != nil {
 		s.fail(w, r, err)
 		return
 	}
-	s.redirectToPlan(w, r, v.PlanID, reset)
+	s.redirectToPlan(w, r, v.PlanID, moved)
 }
 
 func (s *Server) planDiscard(w http.ResponseWriter, r *http.Request) {

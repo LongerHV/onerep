@@ -114,27 +114,27 @@ func TestFollowAndMoveThroughPlan(t *testing.T) {
 	}
 
 	// A new version with the same days keeps the cursor...
-	if _, reset, err := e.svc.Save(ctx, e.alice, p.ID, weeksDoc(3), SaveActivate, "web", ""); err != nil || reset {
-		t.Fatalf("save 3 weeks: reset=%v err=%v", reset, err)
+	if _, m, err := e.svc.Save(ctx, e.alice, p.ID, weeksDoc(3), SaveActivate, "web", ""); err != nil || m.Moved() {
+		t.Fatalf("save 3 weeks: move=%+v err=%v", m, err)
 	}
 	if n, _ = e.svc.Next(ctx, e.alice); n.Week != 2 || n.Day != 1 {
 		t.Fatalf("cursor moved: (%d, %d)", n.Week, n.Day)
 	}
-	// ...one without the current day resets it, and the comparison warns first.
+	// ...one without the current week completes the plan, and the comparison says so first.
 	draft1, _, err := e.svc.Save(ctx, e.alice, p.ID, weeksDoc(1), SaveDraft, "web", "")
 	if err != nil {
 		t.Fatal(err)
 	}
 	cmp, err := e.svc.Compare(ctx, e.alice, draft1.ID)
-	if err != nil || !cmp.ResetsCursor || cmp.Base == nil || !Changed(cmp.JSON) || len(cmp.Days) != 4 {
+	if err != nil || cmp.Cursor == nil || cmp.Cursor.Kind != CursorPastEnd || cmp.Base == nil || !Changed(cmp.JSON) || len(cmp.Days) != 4 {
 		t.Fatalf("comparison = %+v, %v", cmp, err)
 	}
-	reset, err := e.svc.Activate(ctx, e.alice, draft1.ID)
-	if err != nil || !reset {
-		t.Fatalf("activate 1-week version: reset=%v err=%v", reset, err)
+	m, err := e.svc.Activate(ctx, e.alice, draft1.ID)
+	if err != nil || m.Kind != CursorPastEnd || !m.Complete {
+		t.Fatalf("activate 1-week version: move=%+v err=%v", m, err)
 	}
-	if n, _ = e.svc.Next(ctx, e.alice); n.Week != 1 || n.Day != 0 {
-		t.Fatalf("cursor not reset: (%d, %d)", n.Week, n.Day)
+	if n, _ = e.svc.Next(ctx, e.alice); !n.Complete || n.Week != 2 {
+		t.Fatalf("plan should be complete: %+v", n)
 	}
 
 	// Archiving the followed plan stops following it.
@@ -392,5 +392,72 @@ func TestSaveDraftKeepsOthersDrafts(t *testing.T) {
 	}
 	if got, _ := e.svc.Version(ctx, e.alice, v.ID); got.Source != "web" {
 		t.Fatalf("the user's draft was taken over: %+v", got)
+	}
+}
+
+// Changing versions never restarts a plan (the lifter decides when to restart).
+func TestVersionChangeKeepsProgress(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	p, v2, err := e.svc.Create(ctx, e.alice, weeksDoc(2), SaveActivate, "web", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = e.svc.Follow(ctx, e.alice, p.ID)
+	db := e.svc.Store.(*store.DB)
+	at := func(week, day int) {
+		t.Helper()
+		if err := db.SetActivePlan(ctx, e.alice.ID, store.ActivePlan{PlanID: p.ID, Week: week, Day: day}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	cursor := func() [2]int {
+		t.Helper()
+		a, err := db.ActivePlan(ctx, e.alice.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return [2]int{a.Week, a.Day}
+	}
+
+	// A finished 2-week plan stays complete when a 3-week version is activated...
+	at(3, 0)
+	v3, _, _ := e.svc.Save(ctx, e.alice, p.ID, weeksDoc(3), SaveDraft, "web", "")
+	if cmp, _ := e.svc.Compare(ctx, e.alice, v3.ID); cmp.Cursor == nil || cmp.Cursor.Kind != CursorStaysComplete {
+		t.Fatalf("comparison cursor = %+v", cmp.Cursor)
+	}
+	if m, err := e.svc.Activate(ctx, e.alice, v3.ID); err != nil || m.Kind != CursorStaysComplete {
+		t.Fatalf("activate: %+v %v", m, err)
+	}
+	if got := cursor(); got != [2]int{4, 0} {
+		t.Fatalf("cursor after a longer version = %v", got)
+	}
+	// ...and when the shorter one comes back.
+	if _, err := e.svc.Activate(ctx, e.alice, v2.ID); err != nil {
+		t.Fatal(err)
+	}
+	if got := cursor(); got != [2]int{3, 0} {
+		t.Fatalf("cursor after a shorter version = %v", got)
+	}
+
+	// A day that no longer exists moves on to the next day that does.
+	at(1, 1)
+	oneDay := []byte(`{"name": "Test", "weeks": 2, "days": [
+		{"name": "A", "groups": [{"exercises": [{"slug": "barbell-back-squat", "sets": [{"count": 3, "reps": 5}]}]}]}]}`)
+	if _, m, err := e.svc.Save(ctx, e.alice, p.ID, oneDay, SaveActivate, "web", ""); err != nil || m.Kind != CursorDayMissing || m.Complete {
+		t.Fatalf("save one-day version: %+v %v", m, err)
+	}
+	if got := cursor(); got != [2]int{2, 0} {
+		t.Fatalf("cursor after the day disappeared = %v", got)
+	}
+
+	// Next never silently restarts on a position the version doesn't have.
+	at(1, 3)
+	if n, err := e.svc.Next(ctx, e.alice); err != nil || n.Week != 2 || n.Day != 0 || n.Today.Name != "A" {
+		t.Fatalf("next from a missing day = %+v, %v", n, err)
+	}
+	at(2, 3)
+	if n, err := e.svc.Next(ctx, e.alice); err != nil || !n.Complete {
+		t.Fatalf("next from a missing last day = %+v, %v", n, err)
 	}
 }
