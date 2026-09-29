@@ -68,16 +68,18 @@ func (s *Service) ExerciseStats(ctx context.Context, user store.User, slug strin
 	if err != nil {
 		return ExerciseStats{}, err
 	}
+	return s.StatsOf(ctx, user, ex)
+}
+
+// StatsOf is ExerciseStats for an exercise the caller has already resolved
+// for this user (with Exercises.Get).
+func (s *Service) StatsOf(ctx context.Context, user store.User, ex store.Exercise) (ExerciseStats, error) {
 	st := ExerciseStats{Exercise: ex}
-	points, err := s.Store.E1RMSeries(ctx, user.ID, slug)
-	if err != nil {
+	var err error
+	if st.Series, err = s.series(ctx, user, ex.Slug); err != nil {
 		return st, err
 	}
-	for _, p := range points {
-		st.Series = append(st.Series, Point{SessionID: p.SessionID, DoneAt: p.DoneAt, E1RMKg: p.E1RMKg, RPEBased: isRPEBased(p),
-			WeightKg: p.WeightKg, Reps: p.Reps, RPE: p.RPE})
-	}
-	maxes, err := s.Store.RepMaxes(ctx, user.ID, slug, "")
+	maxes, err := s.Store.RepMaxes(ctx, user.ID, ex.Slug, "")
 	if err != nil {
 		return st, err
 	}
@@ -87,6 +89,28 @@ func (s *Service) ExerciseStats(ctx context.Context, user store.User, slug strin
 		}
 	}
 	return st, nil
+}
+
+// E1RMSeries returns the e1RM series of one of the user's exercises, one point
+// per session: what the chart needs, without the rep maxes.
+func (s *Service) E1RMSeries(ctx context.Context, user store.User, slug string) ([]Point, error) {
+	if _, err := s.Exercises.Get(ctx, user.ID, slug); err != nil {
+		return nil, err
+	}
+	return s.series(ctx, user, slug)
+}
+
+func (s *Service) series(ctx context.Context, user store.User, slug string) ([]Point, error) {
+	points, err := s.Store.E1RMSeries(ctx, user.ID, slug)
+	if err != nil {
+		return nil, err
+	}
+	var out []Point
+	for _, p := range points {
+		out = append(out, Point{SessionID: p.SessionID, DoneAt: p.DoneAt, E1RMKg: p.E1RMKg, RPEBased: isRPEBased(p),
+			WeightKg: p.WeightKg, Reps: p.Reps, RPE: p.RPE})
+	}
+	return out, nil
 }
 
 // isRPEBased reports whether calc derived the point's e1RM from the RTS table.

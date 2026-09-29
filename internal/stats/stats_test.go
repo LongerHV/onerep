@@ -78,6 +78,69 @@ func TestExerciseStats(t *testing.T) {
 	}
 }
 
+// counting wraps the real store and catalog to count the calls the page and API avoid.
+type counting struct {
+	Store
+	Exercises
+	repMaxes, gets int
+}
+
+func (c *counting) RepMaxes(ctx context.Context, userID, slug, excludeSessionID string) ([]store.RepMax, error) {
+	c.repMaxes++
+	return c.Store.RepMaxes(ctx, userID, slug, excludeSessionID)
+}
+
+func (c *counting) Get(ctx context.Context, userID, slug string) (store.Exercise, error) {
+	c.gets++
+	return c.Exercises.Get(ctx, userID, slug)
+}
+
+func (e env) counted() (*Service, *counting) {
+	c := &counting{Store: e.svc.Store, Exercises: e.svc.Exercises}
+	return &Service{Store: c, Exercises: c, Now: e.svc.Now}, c
+}
+
+// The e1RM chart only needs the series: no rep maxes.
+func TestE1RMSeries(t *testing.T) {
+	e := newEnv(t, monday)
+	e.log(t, "barbell-back-squat", "working", 100, 5, f(8), monday, f(123.5))
+	svc, c := e.counted()
+	series, err := svc.E1RMSeries(context.Background(), e.user, "barbell-back-squat")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(series) != 1 || series[0].E1RMKg != 123.5 || !series[0].RPEBased {
+		t.Fatalf("series = %+v", series)
+	}
+	if c.repMaxes != 0 {
+		t.Errorf("E1RMSeries ran RepMaxes %d times, want 0", c.repMaxes)
+	}
+	if _, err := svc.E1RMSeries(context.Background(), e.user, "no-such-exercise"); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("unknown slug: %v", err)
+	}
+}
+
+// The exercise page has already resolved the exercise; its stats don't look it up again.
+func TestStatsOfResolvedExercise(t *testing.T) {
+	e := newEnv(t, monday)
+	e.log(t, "barbell-back-squat", "working", 100, 5, f(8), monday, f(123.5))
+	ex, err := e.svc.Exercises.Get(context.Background(), e.user.ID, "barbell-back-squat")
+	if err != nil {
+		t.Fatal(err)
+	}
+	svc, c := e.counted()
+	st, err := svc.StatsOf(context.Background(), e.user, ex)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.Exercise.Slug != ex.Slug || len(st.Series) != 1 || len(st.RepMaxes) != 1 {
+		t.Fatalf("stats = %+v", st)
+	}
+	if c.gets != 0 {
+		t.Errorf("StatsOf looked the exercise up %d times, want 0", c.gets)
+	}
+}
+
 func TestRPEBasedFollowsCalc(t *testing.T) {
 	// Only the method calc.E1RM used decides the style; an RPE off the table is rep-based.
 	if isRPEBased(store.E1RMPoint{WeightKg: 90, Reps: 1, RPE: f(5)}) {
