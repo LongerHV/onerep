@@ -157,6 +157,11 @@ func TestHistoryEditor(t *testing.T) {
 	if !strings.Contains(page, "Barbell Bench Press") || !strings.Contains(page, `value="80"`) {
 		t.Fatalf("history detail:\n%.600s", page)
 	}
+	// Times are sent in UTC for the browser to show in the user's timezone.
+	stamp := regexp.MustCompile(`<time datetime="\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ" data-local="(datetime|weekday)">[^<]* UTC</time>`)
+	if !stamp.MatchString(list) || !stamp.MatchString(page) {
+		t.Fatalf("history times are not <time data-local> in UTC:\n%s", list)
+	}
 
 	// Correct the weight (in the user's unit), add a set, delete it again.
 	edit := url.Values{"set_id": {setID}, "slug": {"barbell-bench-press"}, "kind": {"working"}, "group_pos": {"0"},
