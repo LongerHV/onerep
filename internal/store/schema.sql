@@ -173,6 +173,9 @@ CREATE TABLE sets (
 
 CREATE INDEX sets_session ON sets (session_id);
 CREATE INDEX sets_user_slug_done ON sets (user_id, slug, done_at);
+-- Covers HardSets (weekly muscle volume): a date range of sets, in order, with
+-- every column it filters on and returns, so it never reads the table.
+CREATE INDEX sets_user_done ON sets (user_id, done_at, id, kind, rpe, deleted_at, slug);
 
 -- Sync operations already applied, so replays are answered, not re-applied.
 CREATE TABLE applied_ops (

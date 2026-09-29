@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 )
@@ -154,5 +155,32 @@ func TestStatsIgnoreDeletedWarmupAndOtherUsers(t *testing.T) {
 	}
 	if prs, _ := db.SessionPRs(ctx, other.ID, later.ID); len(prs) != 0 {
 		t.Errorf("another user's session leaked PRs: %v", prs)
+	}
+}
+
+// The muscles page runs HardSets over a date range; it must seek an index on
+// (user_id, done_at) and read nothing else, however long the history grows.
+func TestHardSetsUsesCoveringIndex(t *testing.T) {
+	db := newTestDB(t)
+	rows, err := db.read.QueryContext(context.Background(), "EXPLAIN QUERY PLAN "+hardSetsQuery, "u", "a", "b")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	var plan []string
+	for rows.Next() {
+		var id, parent, unused int
+		var detail string
+		if err := rows.Scan(&id, &parent, &unused, &detail); err != nil {
+			t.Fatal(err)
+		}
+		plan = append(plan, detail)
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
+	got := strings.Join(plan, "\n")
+	if !strings.Contains(got, "USING COVERING INDEX sets_user_done (user_id=? AND done_at>? AND done_at<?)") || strings.Contains(got, "TEMP B-TREE") {
+		t.Fatalf("HardSets query plan:\n%s\nwant a covering range seek on sets_user_done and no sort", got)
 	}
 }
