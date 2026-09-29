@@ -5,23 +5,13 @@ Known issues, deferred on purpose: each was found in a milestone's final review 
 ## Operations and deployment
 
 - **No favicon, app icons or web app manifest.** `/favicon.ico` is a 404, and installing onerep on a phone shows a generic icon and name. Fix: an icon set and a `manifest.webmanifest` (name, icons, `display: standalone`, theme colours) linked from the layout, both added to the service worker shell. (`views/layout.templ`, `static/`, `static/js/sw.js`)
-- **Backup onto an existing file.** An empty existing destination is silently overwritten. A non-database file fails with only `file is not a database (26)`, which reads as if the live database were corrupt. Fix: `os.Stat(dest)` first and wrap errors as `backup to <dest>: …`. (`internal/store/store.go`, Backup)
-- **A failed migration leaves the database "dirty" with no way to recover in the image.** golang-migrate marks it dirty, and every later start fails. The distroless image has no `sqlite3` or `migrate force`. Fix: on `ErrDirty`, force the previous version (migrations run in a transaction, so the schema was rolled back), or add `onerep migrate --force N`. (`internal/store/store.go`)
 - **Static assets are unversioned and cached for an hour.** Users can see stale CSS and JS for up to an hour after an upgrade. Fix: content-hashed URLs, served as immutable. (`internal/web/static.go`)
-- **Pre-release tags publish `latest`,** and the release workflow doesn't wait for CI. (`.github/workflows/release.yml`)
-- **Compose user default.** `${UID:-1000}:${GID:-1000}`: bash doesn't export `UID` or define `GID`, so compose always runs as 1000:1000. Fix: document `UID=$(id -u) GID=$(id -g) docker compose up`, or use `.env`. (`deploy/compose.yaml`)
-- **Task name differs from the spec.** Spec §11 says `task dev:dex`; the Taskfile and docs say `task dex`.
 
 ## Auth
 
 - **Two login tabs at once make each other fail** with "state mismatch", because they share one `onerep_oidc` flow cookie. Fix: name the cookie per state, or restart the login on a mismatch. (`internal/auth/oidc.go`)
 - **Login and logout errors are bare text pages** with no way back. An IdP `access_denied` or an expired session on logout shows plain text. Fix: render the error page with a "Sign in again" link. (`internal/auth/oidc.go`, `middleware.go`)
 - **Unused field `OIDC.issuer`.** (`internal/auth/oidc.go`)
-
-## Calculations
-
-- **Go and JS disagree above about 9.2e16 kg or for +Inf,** because of int64 overflow in `cents`. It can't be reached from the UI. Fix: clamp non-finite or huge targets in both `Round` implementations, and add a shared test vector. (`internal/calc/units.go`, `calc.js`)
-- **Go `E1RM(NaN, …)` returns ok; JS returns null.** Fix: `if !(weightKg > 0)`. (`internal/calc/e1rm.go`)
 
 ## Exercises and equipment
 

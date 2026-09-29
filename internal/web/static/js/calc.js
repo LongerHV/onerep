@@ -44,11 +44,15 @@ export function e1rm(weightKg, reps, rpe) {
 }
 
 const MAX_SIDE_CENTS = 100000;
+// Clamp for rounding targets: far above any real load, and small enough that
+// cents stays an exact integer (Go: no int64 overflow).
+const MAX_TARGET_KG = 1e6;
 
 // Heaviest achievable load not above targetKg (or the lightest achievable one),
 // as {kg, per_side}. per_side lists one side's plates in the equipment's unit.
 export function round(targetKg, equipment, fallbackUnit) {
   if (Number.isNaN(targetKg) || targetKg < 0) targetKg = 0;
+  if (targetKg > MAX_TARGET_KG) targetKg = MAX_TARGET_KG;
   if (!equipment || equipment.kind === "bodyweight") {
     const unit = equipment ? equipment.unit : fallbackUnit;
     const step = unit === "lb" ? 100 : 50;

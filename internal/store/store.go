@@ -8,11 +8,15 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"log/slog"
 	"net/url"
+	"os"
 	"time"
 
 	"github.com/golang-migrate/migrate/v4"
+	"github.com/golang-migrate/migrate/v4/database"
 	sqlitemigrate "github.com/golang-migrate/migrate/v4/database/sqlite"
+	"github.com/golang-migrate/migrate/v4/source"
 	"github.com/golang-migrate/migrate/v4/source/iofs"
 	_ "modernc.org/sqlite" // registers the "sqlite" database/sql driver
 )
@@ -126,10 +130,35 @@ func migrateFS(path string, fsys fs.FS, dir string) error {
 		return err
 	}
 	defer m.Close()
-	if err := m.Up(); err != nil && !errors.Is(err, migrate.ErrNoChange) {
+	err = m.Up()
+	var dirty migrate.ErrDirty
+	if errors.As(err, &dirty) {
+		err = recoverDirty(m, src, dirty.Version)
+	}
+	if err != nil && !errors.Is(err, migrate.ErrNoChange) {
 		return err
 	}
 	return checkForeignKeys(path)
+}
+
+// recoverDirty resets a "dirty" version left by a migration that failed or was
+// interrupted, then retries. golang-migrate's sqlite driver runs each migration
+// in one transaction (NoTxWrap is off, and TestMigrationsHaveNoTransactionControl
+// keeps COMMIT out of migration files), so a failed migration left the schema at
+// the previous version. Only the version row is stale.
+func recoverDirty(m *migrate.Migrate, src source.Driver, version int) error {
+	prev := database.NilVersion
+	if p, err := src.Prev(uint(version)); err == nil {
+		prev = int(p)
+	} else if !errors.Is(err, fs.ErrNotExist) {
+		return fmt.Errorf("dirty version %d: find previous migration: %w", version, err)
+	}
+	slog.Warn("migration was left dirty by a failed run; its transaction was rolled back, retrying",
+		"dirty_version", version, "reset_to", prev)
+	if err := m.Force(prev); err != nil {
+		return fmt.Errorf("dirty version %d: force version %d: %w", version, prev, err)
+	}
+	return m.Up()
 }
 
 // checkForeignKeys fails if any row references a missing parent.
@@ -164,7 +193,16 @@ func checkForeignKeys(path string) error {
 }
 
 // Backup writes a consistent copy of the database to dest, which must not exist.
+// VACUUM INTO would silently overwrite an empty file and fails on any other
+// with a misleading "file is not a database", so existence is checked first.
 func (db *DB) Backup(ctx context.Context, dest string) error {
-	_, err := db.write.ExecContext(ctx, "VACUUM INTO ?", dest)
-	return err
+	if _, err := os.Stat(dest); err == nil {
+		return fmt.Errorf("backup to %s: file already exists", dest)
+	} else if !errors.Is(err, fs.ErrNotExist) {
+		return fmt.Errorf("backup to %s: %w", dest, err)
+	}
+	if _, err := db.write.ExecContext(ctx, "VACUUM INTO ?", dest); err != nil {
+		return fmt.Errorf("backup to %s: %w", dest, err)
+	}
+	return nil
 }
