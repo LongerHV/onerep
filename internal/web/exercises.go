@@ -157,8 +157,9 @@ func (s *Server) exerciseDelete(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
-	// A reset seeded exercise still exists; a deleted custom one does not.
-	if _, err := s.Exercises.Get(r.Context(), user(r).ID, slug); err == nil {
+	// A reset seeded exercise still exists; a deleted custom one does not (a
+	// hidden seeded exercise with its slug is only reachable from history).
+	if ex, err := s.Exercises.Get(r.Context(), user(r).ID, slug); err == nil && !ex.Hidden {
 		http.Redirect(w, r, "/exercises/"+slug, http.StatusSeeOther)
 		return
 	}
@@ -180,11 +181,10 @@ func (s *Server) exerciseSettings(w http.ResponseWriter, r *http.Request) {
 			tm = &kg
 		}
 	}
+	equipmentID := r.PostForm.Get("equipment_id")
 	if len(errs) == 0 {
-		err := s.Exercises.LinkEquipment(ctx, u.ID, slug, r.PostForm.Get("equipment_id"))
-		if err == nil && !s.showsCurrentTM(r, slug, tmText) {
-			err = s.Exercises.SetTrainingMax(ctx, u.ID, slug, tm, "web")
-		}
+		err := s.Exercises.SaveSettings(ctx, u.ID, slug, exercise.SettingsInput{EquipmentID: equipmentID,
+			SetTrainingMax: !s.showsCurrentTM(r, slug, tmText), TrainingMaxKg: tm}, "web")
 		var fe exercise.FieldErrors
 		switch {
 		case errors.As(err, &fe):
@@ -202,7 +202,8 @@ func (s *Server) exerciseSettings(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
-	d.Errors, d.TMInput = errs, tmText
+	// Nothing was saved: show the form as submitted.
+	d.Errors, d.TMInput, d.Settings.EquipmentID = errs, tmText, equipmentID
 	render(w, r, http.StatusUnprocessableEntity, views.ExerciseDetailPage(page(r, d.Exercise.Name), d))
 }
 
