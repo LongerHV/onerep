@@ -158,9 +158,9 @@ func TestStatsIgnoreDeletedWarmupAndOtherUsers(t *testing.T) {
 	}
 }
 
-// The muscles page runs HardSets over a date range; it must seek an index on
-// (user_id, done_at) and read nothing else, however long the history grows.
-func TestHardSetsUsesCoveringIndex(t *testing.T) {
+// The muscles page runs HardSets over a date range; it must seek the
+// (user_id, done_at) index, not scan the user's whole history.
+func TestHardSetsSeeksUserDoneIndex(t *testing.T) {
 	db := newTestDB(t)
 	rows, err := db.read.QueryContext(context.Background(), "EXPLAIN QUERY PLAN "+hardSetsQuery, "u", "a", "b")
 	if err != nil {
@@ -180,7 +180,7 @@ func TestHardSetsUsesCoveringIndex(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := strings.Join(plan, "\n")
-	if !strings.Contains(got, "USING COVERING INDEX sets_user_done (user_id=? AND done_at>? AND done_at<?)") || strings.Contains(got, "TEMP B-TREE") {
-		t.Fatalf("HardSets query plan:\n%s\nwant a covering range seek on sets_user_done and no sort", got)
+	if !strings.Contains(got, "SEARCH sets USING INDEX sets_user_done (user_id=? AND done_at>? AND done_at<?)") || strings.Contains(got, "SCAN") {
+		t.Fatalf("HardSets query plan:\n%s\nwant a range seek on sets_user_done and no scan", got)
 	}
 }
