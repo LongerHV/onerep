@@ -42,7 +42,6 @@ Known issues, deferred on purpose: each was found in a milestone's final review 
 
 ## Stats
 
-- **The companion's PR table can include later sets.** `RepMaxes(…, excludeSessionID)` takes other sessions' bests regardless of time, so resuming an older workout after a newer one was logged can hide an advisory badge. Fix: bound it by the session's `started_at`. (`internal/training/bootstrap.go`)
 - **The PR banner goes stale.** "New PR: …" stays after that set is edited below the record, deleted, or the workout is finished, until the next set is logged. Fix: recompute it in `render()` from the last logged set. (`companion.js`)
 - **"No working sets logged yet" is keyed on the 1–12 rep table,** so someone who only logged sets above 12 reps sees it. A `bw_reps` set saved from the history form with an empty weight stores NULL, where the companion stores 0, so it drops out of PRs. (`views/exercises.templ`, `internal/web/history.go`)
 

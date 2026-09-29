@@ -20,7 +20,7 @@ const MaxRepMax = 12
 
 // Store is the persistence the service needs. *store.DB implements it.
 type Store interface {
-	RepMaxes(ctx context.Context, userID, slug, excludeSessionID string) ([]store.RepMax, error)
+	RepMaxes(ctx context.Context, userID, slug, beforeSessionID string) ([]store.RepMax, error)
 	E1RMSeries(ctx context.Context, userID, slug string) ([]store.E1RMPoint, error)
 	SessionPRs(ctx context.Context, userID, sessionID string) (map[string]bool, error)
 	HardSets(ctx context.Context, userID string, from, to time.Time) ([]store.HardSet, error)

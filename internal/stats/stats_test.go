@@ -85,9 +85,9 @@ type counting struct {
 	repMaxes, gets int
 }
 
-func (c *counting) RepMaxes(ctx context.Context, userID, slug, excludeSessionID string) ([]store.RepMax, error) {
+func (c *counting) RepMaxes(ctx context.Context, userID, slug, beforeSessionID string) ([]store.RepMax, error) {
 	c.repMaxes++
-	return c.Store.RepMaxes(ctx, userID, slug, excludeSessionID)
+	return c.Store.RepMaxes(ctx, userID, slug, beforeSessionID)
 }
 
 func (c *counting) Get(ctx context.Context, userID, slug string) (store.Exercise, error) {
