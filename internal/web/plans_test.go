@@ -214,14 +214,32 @@ func TestChooseRejectsNegativeDay(t *testing.T) {
 func TestOversizedPlanDocumentIsRefused(t *testing.T) {
 	srv, c := newApp(t, "alice")
 	csrf := session(t, srv, c)
-	big := `{"name": "` + strings.Repeat("x", 1<<20) + `"}`
-	resp, body := post(t, c, srv.URL+"/plans/preview", csrf, url.Values{"doc": {big}})
-	if !strings.Contains(body, "too large") {
+	// The 1 MB limit is on the JSON, not its form encoding: a document just
+	// under it is accepted even though punctuation-heavy JSON grows when encoded.
+	filler := strings.Repeat(`{"a":[1,2]},`, (plan.MaxDocBytes-100)/12)
+	fits := `{"name": "fits", "x": [` + strings.TrimSuffix(filler, ",") + `]}`
+	if len(url.Values{"doc": {fits}}.Encode()) <= 2*plan.MaxDocBytes {
+		t.Fatal("test document should encode to well over 1 MB")
+	}
+	resp, body := post(t, c, srv.URL+"/plans/preview", csrf, url.Values{"doc": {fits}})
+	if resp.StatusCode != http.StatusOK || strings.Contains(body, "too large") || strings.Contains(body, "larger than 1 MB") {
+		t.Fatalf("preview of a document under 1 MB: %d\n%.300s", resp.StatusCode, body)
+	}
+
+	big := `{"name": "` + strings.Repeat("x", plan.MaxDocBytes) + `"}`
+	resp, body = post(t, c, srv.URL+"/plans/preview", csrf, url.Values{"doc": {big}})
+	if !strings.Contains(body, "larger than 1 MB") {
 		t.Fatalf("preview of a 1 MB document: %d\n%.300s", resp.StatusCode, body)
 	}
 	resp, body = post(t, c, srv.URL+"/plans", csrf, url.Values{"doc": {big}, "action": {"draft"}})
-	if resp.StatusCode != http.StatusRequestEntityTooLarge || !strings.Contains(body, "too large") {
+	if resp.StatusCode != http.StatusUnprocessableEntity || !strings.Contains(body, "larger than 1 MB") {
 		t.Fatalf("saving a 1 MB document: %d", resp.StatusCode)
+	}
+
+	huge := strings.Repeat("{", 3*plan.MaxDocBytes)
+	resp, body = post(t, c, srv.URL+"/plans", csrf, url.Values{"doc": {huge}, "action": {"draft"}})
+	if resp.StatusCode != http.StatusRequestEntityTooLarge || !strings.Contains(body, "too large") {
+		t.Fatalf("an oversized request: %d", resp.StatusCode)
 	}
 }
 func TestPlanEditorUsesTheEditorSchema(t *testing.T) {

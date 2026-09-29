@@ -74,6 +74,9 @@ type Lookup interface {
 // cannot express. The Doc is only meaningful when there are no errors.
 func Validate(raw []byte, lookup Lookup) (Doc, Problems) {
 	var doc Doc
+	if len(raw) > MaxDocBytes {
+		return doc, Problems{{Message: fmt.Sprintf("the document is larger than 1 MB (%d KB): split it into smaller plans", len(raw)>>10)}}
+	}
 	var syntax *json.SyntaxError
 	if err := json.Unmarshal(raw, new(any)); errors.As(err, &syntax) {
 		line, col := position(raw, syntax.Offset)
@@ -360,6 +363,9 @@ func totalSets(doc Doc) int {
 
 // MaxProblems bounds the problems reported for one document.
 const MaxProblems = 50
+
+// MaxDocBytes bounds a plan document's JSON, however it is sent.
+const MaxDocBytes = 1 << 20
 
 // MaxValues bounds the JSON values in a document (a 52-week plan with
 // per-week arrays everywhere is about 25,000). It is checked before the
