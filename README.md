@@ -19,7 +19,9 @@ docker run -p 8080:8080 -v ./data:/data --user "$(id -u):$(id -g)" \
 ```
 
 Register `${ONEREP_BASE_URL}/auth/callback` as the redirect URI at your OIDC
-provider. See `deploy/compose.yaml` for a compose example.
+provider. See `deploy/compose.yaml` for a compose example. It runs as `UID`:`GID`
+(1000:1000 unless set, since shells don't export them), so write your IDs to a `.env`
+next to it first: `printf 'UID=%s\nGID=%s\n' "$(id -u)" "$(id -g)" > .env`.
 
 The client secret is optional. Leave `ONEREP_OIDC_CLIENT_SECRET` unset to run onerep as a
 *public* client: the login code is then exchanged with PKCE (S256) alone, so register the

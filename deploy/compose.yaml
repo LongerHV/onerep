@@ -4,6 +4,11 @@
 # ONEREP_OIDC_CLIENT_SECRET to run as a public client (PKCE only; register
 # the client as public at the provider).
 #
+# The container runs as ${UID}:${GID}, which must be able to write ./data.
+# Shells don't export UID or define GID, so without them it runs as 1000:1000.
+# Put your IDs in a .env file next to this one (compose reads it):
+#
+#   printf 'UID=%s\nGID=%s\n' "$(id -u)" "$(id -g)" > .env
 #   mkdir -p data && docker compose up -d
 services:
   onerep:
