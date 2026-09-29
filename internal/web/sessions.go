@@ -26,7 +26,19 @@ func (s *Server) sessionRoutes(r chi.Router) {
 	r.Post("/sessions", s.sessionStart)
 	r.Get("/sessions/{id}/live", s.sessionLive)
 	r.Post("/api/sync", s.apiSync)
+	r.Get("/api/sessions/{id}/sets", s.apiSessionSets)
 	r.Get("/api/csrf", apiCSRF)
+}
+
+// apiSessionSets returns a session's sets, which the companion fetches after
+// syncing to learn about sets deleted in history or on another device.
+func (s *Server) apiSessionSets(w http.ResponseWriter, r *http.Request) {
+	sets, err := s.Training.SessionSets(r.Context(), user(r), chi.URLParam(r, "id"))
+	if err != nil {
+		s.failJSON(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"sets": sets})
 }
 
 func (s *Server) sessionStart(w http.ResponseWriter, r *http.Request) {
@@ -95,7 +107,8 @@ func (s *Server) apiSync(w http.ResponseWriter, r *http.Request) {
 // offline cache after the user signed in again.
 func apiCSRF(w http.ResponseWriter, r *http.Request) {
 	id, _ := auth.FromContext(r.Context())
-	writeJSON(w, http.StatusOK, map[string]string{"csrf": id.CSRFToken})
+	// user_id lets the companion refuse a token of another user's session.
+	writeJSON(w, http.StatusOK, map[string]string{"csrf": id.CSRFToken, "user_id": id.User.ID})
 }
 
 // serviceWorker serves /sw.js with its cache version set to shellVersion, so

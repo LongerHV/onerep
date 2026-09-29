@@ -163,6 +163,15 @@ func TestHugePlanIsRejectedQuickly(t *testing.T) {
 	}
 }
 
+// The size limit is on the document itself, however it is sent.
+func TestOversizedDocumentIsRejected(t *testing.T) {
+	doc := `{"name": "` + strings.Repeat("x", MaxDocBytes) + `"}`
+	_, ps := Validate([]byte(doc), testCatalog)
+	if got := problemsAt(ps, ""); len(got) != 1 || !strings.Contains(got[0], "larger than 1 MB") {
+		t.Fatalf("problems = %v", ps)
+	}
+}
+
 // Under the size limit, a document can still hold enough items to make
 // schema validation and catalog lookups slow on every preview keystroke.
 func TestManyItemsAreRejectedQuickly(t *testing.T) {

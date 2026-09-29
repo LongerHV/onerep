@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"time"
 
 	"github.com/a-h/templ"
@@ -59,9 +60,12 @@ func (s *Server) Routes() http.Handler {
 	r.With(s.layout).Get("/auth/signed-out", func(w http.ResponseWriter, r *http.Request) {
 		render(w, r, http.StatusOK, views.SignedOut(page(r, "Signed out")))
 	})
+	// Signing out needs no session: an expired one just lands on the signed-out
+	// page. CSRF still applies whenever there is a session to end.
+	r.With(s.limitBody, auth.CSRF).Post("/auth/logout", s.logout)
 	if s.OIDC != nil {
 		r.Get("/auth/login", s.OIDC.Login)
-		r.Get("/auth/callback", s.OIDC.Callback)
+		r.With(s.layout).Get("/auth/callback", s.OIDC.Callback(s.loginFailed))
 	} else {
 		r.Get("/auth/login", func(w http.ResponseWriter, r *http.Request) {
 			http.Redirect(w, r, "/", http.StatusSeeOther)
@@ -75,7 +79,6 @@ func (s *Server) Routes() http.Handler {
 		}
 		r.Use(auth.RequireUser, s.limitBody, auth.CSRF, s.starterEquipment)
 		r.Get("/", s.home)
-		r.Post("/auth/logout", s.logout)
 		s.exerciseRoutes(r)
 		s.planRoutes(r)
 		s.sessionRoutes(r)
@@ -162,10 +165,23 @@ func (s *Server) healthz(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) logout(w http.ResponseWriter, r *http.Request) {
+	// Drop the offline copy of this user's data: the companion's IndexedDB
+	// (outbox included) and cached workout pages. companion.js also clears it
+	// on the signed-out page, for browsers that ignore this header.
+	w.Header().Set("Clear-Site-Data", `"cache", "storage"`)
 	if err := s.Sessions.End(w, r); err != nil {
 		slog.ErrorContext(r.Context(), "logout", "err", err)
 	}
 	http.Redirect(w, r, "/auth/signed-out", http.StatusSeeOther)
+}
+
+// loginFailed renders the page for a failed sign-in, with a link to start again.
+func (s *Server) loginFailed(w http.ResponseWriter, r *http.Request, e auth.LoginError) {
+	login := "/auth/login"
+	if e.Next != "" && e.Next != "/" {
+		login += "?next=" + url.QueryEscape(e.Next)
+	}
+	render(w, r, e.Status, views.LoginFailed(page(r, "Sign-in failed"), e.Message, login, middleware.GetReqID(r.Context())))
 }
 
 // user returns the signed-in user. Only call it behind auth.RequireUser.
@@ -196,8 +212,12 @@ func (s *Server) starterEquipment(next http.Handler) http.Handler {
 	})
 }
 
-// maxBodyBytes bounds request bodies; the largest legitimate one is a plan document.
-const maxBodyBytes = 1 << 20
+// maxBodyBytes bounds request bodies; the largest legitimate one is a plan
+// document. Its own limit (plan.MaxDocBytes) is checked by validation; encoded
+// as a form field (or a JSON string) it can grow up to three times, so the
+// body limit leaves room for that and only stops requests no valid document
+// could make.
+const maxBodyBytes = 3*plan.MaxDocBytes + 64<<10
 
 // limitBody refuses oversized requests before anything reads them. Form posts
 // are parsed here so the limit applies before the CSRF check reads the token.
@@ -207,7 +227,7 @@ func (s *Server) limitBody(next http.Handler) http.Handler {
 		if r.Method == http.MethodPost {
 			var tooLarge *http.MaxBytesError
 			if err := r.ParseForm(); errors.As(err, &tooLarge) {
-				s.renderError(w, r, http.StatusRequestEntityTooLarge, "The request is too large (at most 1 MB).")
+				s.renderError(w, r, http.StatusRequestEntityTooLarge, "The request is too large. A plan document can be at most 1 MB of JSON.")
 				return
 			}
 		}

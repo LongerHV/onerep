@@ -52,6 +52,9 @@ CREATE TABLE exercises (
   secondary_muscles TEXT    NOT NULL DEFAULT '[]',
   aliases           TEXT    NOT NULL DEFAULT '[]',
   hidden            INTEGER NOT NULL DEFAULT 0, -- global rows dropped from the seed file
+  -- user rows: 1 = created by the user as a new exercise, 0 = a customized copy
+  -- of a seeded exercise. Only a copy overrides a global row with its slug.
+  original          INTEGER NOT NULL DEFAULT 0,
   created_at        TEXT    NOT NULL,
   updated_at        TEXT    NOT NULL
 );
@@ -98,7 +101,11 @@ CREATE TABLE plans (
   user_id    TEXT    NOT NULL REFERENCES users (id) ON DELETE CASCADE,
   name       TEXT    NOT NULL,
   archived   INTEGER NOT NULL DEFAULT 0,
-  created_at TEXT    NOT NULL
+  created_at TEXT    NOT NULL,
+  -- The number the next version gets, so a discarded draft's number is never
+  -- reused. 0 on plans from before the counter: they continue after their
+  -- highest version (store.insertVersion).
+  next_version INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE INDEX plans_user_id ON plans (user_id);
@@ -143,7 +150,10 @@ CREATE TABLE sessions (
   started_at      TEXT    NOT NULL,
   finished_at     TEXT,
   notes           TEXT    NOT NULL DEFAULT '',
-  updated_at      TEXT    NOT NULL
+  updated_at      TEXT    NOT NULL,
+  -- When the notes were last edited (the editing device's clock), NULL before
+  -- the first edit. Notes edits race only against each other.
+  notes_updated_at TEXT
 );
 
 CREATE INDEX sessions_user_started ON sessions (user_id, started_at);

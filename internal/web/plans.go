@@ -13,8 +13,18 @@ import (
 	"github.com/LongerHV/onerep/internal/web/views"
 )
 
-// cursorResetNotice is shown when a new version no longer has the user's day.
-const cursorResetNotice = "Your current day does not exist in the new version, so the plan starts over at week 1, day 1."
+// cursorNotice explains, after a version change, where the cursor went when
+// the user's day no longer existed (?cursor=complete|moved).
+func cursorNotice(kind string, week, day int) string {
+	switch kind {
+	case "complete":
+		return "Your current day doesn't exist in this version, so the plan now counts as complete."
+	case "moved":
+		return "Your current day doesn't exist in this version, so you continue at week " + strconv.Itoa(week) +
+			", day " + strconv.Itoa(day+1) + "."
+	}
+	return ""
+}
 
 func (s *Server) planRoutes(r chi.Router) {
 	r.Get("/plans", s.planList)
@@ -127,14 +137,14 @@ func (s *Server) planDetail(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
-	next, err := s.Plans.Next(ctx, u)
+	pos, err := s.Plans.Position(ctx, u)
 	if err != nil {
 		s.fail(w, r, err)
 		return
 	}
-	d := views.PlanPage{Plan: p, Versions: versions, Following: next != nil && next.Plan.ID == p.ID}
-	if r.URL.Query().Has("reset") {
-		d.Notice = cursorResetNotice
+	d := views.PlanPage{Plan: p, Versions: versions, Following: pos != nil && pos.PlanID == p.ID}
+	if d.Following {
+		d.Notice = cursorNotice(r.URL.Query().Get("cursor"), pos.Week, pos.Day)
 	}
 	render(w, r, http.StatusOK, views.PlanDetailPage(page(r, p.Name), d))
 }
@@ -167,7 +177,7 @@ func (s *Server) planEdit(w http.ResponseWriter, r *http.Request) {
 func (s *Server) planSave(w http.ResponseWriter, r *http.Request) {
 	ctx, u, id := r.Context(), user(r), chi.URLParam(r, "id")
 	doc := r.PostFormValue("doc")
-	_, reset, err := s.Plans.Save(ctx, u, id, []byte(doc), saveStatus(r), "web", "")
+	_, moved, err := s.Plans.Save(ctx, u, id, []byte(doc), saveStatus(r), "web", "")
 	var ps plan.Problems
 	switch {
 	case errors.As(err, &ps):
@@ -177,17 +187,25 @@ func (s *Server) planSave(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.renderEditor(w, r, http.StatusUnprocessableEntity, "Edit "+p.Name, id, doc, ps)
+	case errors.Is(err, plan.ErrArchived):
+		s.renderError(w, r, http.StatusConflict, "This plan is archived. Restore it before changing it.")
 	case err != nil:
 		s.fail(w, r, err)
 	default:
-		s.redirectToPlan(w, r, id, reset)
+		s.redirectToPlan(w, r, id, moved)
 	}
 }
 
-func (s *Server) redirectToPlan(w http.ResponseWriter, r *http.Request, id string, reset bool) {
+// redirectToPlan shows the plan after a save or activation, with a notice
+// when the cursor had to leave a day the new version doesn't have.
+func (s *Server) redirectToPlan(w http.ResponseWriter, r *http.Request, id string, m plan.CursorMove) {
 	target := "/plans/" + id
-	if reset {
-		target += "?reset"
+	switch {
+	case !m.Moved() || m.Kind == plan.CursorStaysComplete:
+	case m.Complete:
+		target += "?cursor=complete"
+	default:
+		target += "?cursor=moved"
 	}
 	http.Redirect(w, r, target, http.StatusSeeOther)
 }
@@ -237,7 +255,7 @@ func (s *Server) planCompare(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
-	render(w, r, http.StatusOK, views.PlanComparePage(page(r, p.Name), p, cmp))
+	render(w, r, http.StatusOK, views.PlanComparePage(page(r, p.Name), p, cmp, r.URL.Query().Has("changed")))
 }
 
 func (s *Server) planActivate(w http.ResponseWriter, r *http.Request) {
@@ -246,12 +264,16 @@ func (s *Server) planActivate(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
-	reset, err := s.Plans.Activate(r.Context(), user(r), v.ID)
+	moved, err := s.Plans.Activate(r.Context(), user(r), v.ID, r.PostFormValue("doc_hash"))
+	if errors.Is(err, plan.ErrDocChanged) {
+		http.Redirect(w, r, "/plans/"+v.PlanID+"/versions/"+v.ID+"/compare?changed", http.StatusSeeOther)
+		return
+	}
 	if err != nil {
 		s.fail(w, r, err)
 		return
 	}
-	s.redirectToPlan(w, r, v.PlanID, reset)
+	s.redirectToPlan(w, r, v.PlanID, moved)
 }
 
 func (s *Server) planDiscard(w http.ResponseWriter, r *http.Request) {
@@ -269,8 +291,21 @@ func (s *Server) planDiscard(w http.ResponseWriter, r *http.Request) {
 func (s *Server) planFollow(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	err := s.Plans.Follow(r.Context(), user(r), id)
-	if errors.Is(err, plan.ErrNoActiveVersion) {
-		s.renderError(w, r, http.StatusConflict, "Activate a version of this plan before following it.")
+	var refusal string
+	switch {
+	case errors.Is(err, plan.ErrNoActiveVersion):
+		refusal = "Activate a version of this plan before following it."
+	case errors.Is(err, plan.ErrArchived):
+		refusal = "Restore this plan before following it."
+	}
+	if refusal != "" {
+		p, versions, err := s.Plans.Plan(r.Context(), user(r), id)
+		if err != nil {
+			s.fail(w, r, err)
+			return
+		}
+		d := views.PlanPage{Plan: p, Versions: versions, Notice: refusal}
+		render(w, r, http.StatusConflict, views.PlanDetailPage(page(r, p.Name), d))
 		return
 	}
 	if err != nil {

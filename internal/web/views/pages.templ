@@ -4,9 +4,6 @@ import "strconv"
 
 templ Home(p Page, h HomePage) {
 	<h1 class={ h1 }>Hi, { p.Identity.User.Name }</h1>
-	if h.Notice != "" {
-		<p class="mt-4 rounded bg-amber-100 p-2 text-sm dark:bg-amber-950">{ h.Notice }</p>
-	}
 	if h.Open != nil {
 		<div class={ card + " mt-4" }>
 			<p class="font-medium">Workout in progress: { h.Open.Name }</p>
@@ -70,8 +67,18 @@ templ Home(p Page, h HomePage) {
 }
 
 templ SignedOut(p Page) {
-	<h1 class={ h1 }>Signed out</h1>
+	<h1 class={ h1 } data-signed-out>Signed out</h1>
 	<p class="mt-2"><a href="/auth/login" class="underline" hx-boost="false">Sign in again</a></p>
+}
+
+// LoginFailed is the page for a failed sign-in; loginURL starts it again.
+templ LoginFailed(p Page, message, loginURL, requestID string) {
+	<h1 class={ h1 }>Sign-in failed</h1>
+	<p class="mt-2">{ message }</p>
+	<p class="mt-2"><a href={ templ.SafeURL(loginURL) } class="underline" hx-boost="false">Sign in again</a></p>
+	if requestID != "" {
+		<p class="mt-4 text-sm text-zinc-500">Request ID: <code>{ requestID }</code></p>
+	}
 }
 
 templ Error(p Page, status int, message, requestID string) {

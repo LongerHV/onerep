@@ -56,9 +56,23 @@ export function newState(boot) {
 // state; the newer edit of each set wins. Sets in groups past the plan are
 // exercises added during the workout (on any device, or in history): they
 // are recorded in state.added so positions never collide.
-export function mergeServerSets(boot, state, serverSets) {
+//
+// pending, the ids of sets with operations still in the outbox, is given only
+// when serverSets is a fresh copy fetched after syncing: then a local set the
+// server doesn't have, with nothing pending, was deleted elsewhere (history,
+// another device) and is dropped. The page's own bootstrap may be an older
+// copy (offline cache, htmx history), so without pending nothing is dropped.
+export function mergeServerSets(boot, state, serverSets, pending = null) {
   const s = structuredClone(state);
   const planned = boot.snapshot.groups.length;
+  if (pending) {
+    const onServer = new Set(serverSets.map((x) => x.id));
+    for (const id of Object.keys(s.sets)) {
+      if (onServer.has(id) || pending.has(id)) continue;
+      delete s.sets[id];
+      for (const [k, v] of Object.entries(s.positions)) if (v === id) delete s.positions[k];
+    }
+  }
   for (const set of serverSets) {
     const local = s.sets[set.id];
     if (!(local && Date.parse(local.updated_at) >= Date.parse(set.updated_at))) {
@@ -378,4 +392,82 @@ export function isPR(boot, state, set) {
     if (earlier) best = best === null ? o.weight_kg : Math.max(best, o.weight_kg);
   }
   return best !== null && set.weight_kg > best;
+}
+
+// lastPR returns the most recently logged set if it is a PR, for the banner
+// under the header; null once it is edited below the record, deleted, followed
+// by another set, or the workout is finished.
+export function lastPR(boot, state) {
+  if (state.finished) return null;
+  let last = null;
+  for (const x of Object.values(state.sets)) {
+    if (x.deleted) continue;
+    if (!last || time(x) > time(last) || (time(x) === time(last) && x.id > last.id)) last = x;
+  }
+  return last && isPR(boot, state, last) ? last : null;
+}
+
+// pendingSetIds lists the sets with operations still in the outbox.
+export function pendingSetIds(outbox) {
+  return new Set(outbox.filter((o) => o.op === "upsert_set" || o.op === "delete_set").map((o) => o.payload.id));
+}
+
+// --- offline data: owner and pruning ---
+//
+// IndexedDB and the cached workout pages belong to the user who wrote them.
+// Logout clears them (Clear-Site-Data, and companion.js on the signed-out
+// page); in case that never ran (an expired session, an old browser), each
+// signed-in page compares its user with the stored owner.
+
+// offlineOwner decides what happens to offline data owned by stored when a
+// page of current is shown: adopt it (no owner recorded yet), keep it, or
+// discard it (someone else's). With no signed-in user it is left alone.
+export function offlineOwner(stored, current) {
+  if (!current) return "unknown";
+  if (!stored) return "adopt";
+  return stored === current ? "keep" : "discard";
+}
+
+// opsToSync is the outbox operations user may send, without the owner tag.
+// Untagged ones were queued before operations named their user.
+export function opsToSync(outbox, user) {
+  if (!user) return [];
+  return outbox.filter((o) => !o.user || o.user === user).map(({ user: _, ...o }) => o);
+}
+
+const DAY = 86_400_000;
+export const KEEP_FINISHED_DAYS = 14;
+export const KEEP_OPEN_DAYS = 90;
+const livePage = /^\/sessions\/([^/]+)\/live$/;
+
+// lastTouched is when a saved session last changed: savedAt, or for states
+// saved before that existed, their newest edit (0 when there is none).
+function lastTouched(s) {
+  if (s.savedAt) return s.savedAt;
+  const times = Object.values(s.sets || {}).map((x) => Date.parse(x.updated_at));
+  if (s.notesAt) times.push(Date.parse(s.notesAt));
+  return Math.max(0, ...times.filter(Number.isFinite));
+}
+
+// prunePlan lists what to forget: saved sessions untouched for
+// KEEP_FINISHED_DAYS (finished) or KEEP_OPEN_DAYS (abandoned) with nothing
+// left in the outbox, their rejected operations, and cached workout pages
+// with no saved session. The session open in current is always kept; the
+// server has everything that synced.
+export function prunePlan({ sessions, outbox, failed, pages, now, current = null }) {
+  const queued = new Set(outbox.map((o) => o.payload?.session_id));
+  const drop = new Set();
+  for (const s of sessions) {
+    const keepDays = s.finished ? KEEP_FINISHED_DAYS : KEEP_OPEN_DAYS;
+    if (s.sessionId !== current && !queued.has(s.sessionId) && now - lastTouched(s) > keepDays * DAY) drop.add(s.sessionId);
+  }
+  const kept = new Set(sessions.map((s) => s.sessionId).filter((id) => !drop.has(id)));
+  return {
+    sessions: [...drop],
+    failed: failed.filter((f) => drop.has(f.payload?.session_id)).map((f) => f.op_id),
+    pages: pages.filter((p) => {
+      const id = p.match(livePage)?.[1];
+      return id && id !== current && !kept.has(id) && !queued.has(id);
+    }),
+  };
 }

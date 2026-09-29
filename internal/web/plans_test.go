@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/LongerHV/onerep/internal/auth"
 	"github.com/LongerHV/onerep/internal/exercise"
 	"github.com/LongerHV/onerep/internal/plan"
 )
@@ -21,7 +22,8 @@ func planID(t *testing.T, resp *http.Response) string {
 	if resp.StatusCode != http.StatusSeeOther || !strings.HasPrefix(loc, "/plans/") {
 		t.Fatalf("expected redirect to a plan, got %d %q", resp.StatusCode, loc)
 	}
-	return strings.TrimSuffix(strings.TrimPrefix(loc, "/plans/"), "?reset")
+	id, _, _ := strings.Cut(strings.TrimPrefix(loc, "/plans/"), "?")
+	return id
 }
 
 func TestPlanEditorPage(t *testing.T) {
@@ -111,18 +113,148 @@ func TestReviewDraftThatResetsCursor(t *testing.T) {
 		t.Fatalf("draft not offered for review:\n%s", detail)
 	}
 	cmp := read(t, mustGet(t, c, srv.URL+"/plans/"+id+"/versions/"+m[1]+"/compare"))
-	if !strings.Contains(cmp, "starts the plan over at week 1") || !strings.Contains(cmp, "Week 2 · Upper") {
+	if !strings.Contains(cmp, "Week 4 doesn&#39;t exist in this version: the plan will count as complete.") || !strings.Contains(cmp, "Week 2 · Upper") {
 		t.Fatalf("comparison:\n%s", cmp)
 	}
-	resp, _ = post(t, c, srv.URL+"/plans/"+id+"/versions/"+m[1]+"/activate", csrf, nil)
-	if resp.Header.Get("Location") != "/plans/"+id+"?reset" {
+	resp, _ = post(t, c, srv.URL+"/plans/"+id+"/versions/"+m[1]+"/activate", csrf, url.Values{"doc_hash": {docHash(t, cmp)}})
+	if resp.Header.Get("Location") != "/plans/"+id+"?cursor=complete" {
 		t.Fatalf("activate redirect: %s", resp.Header.Get("Location"))
 	}
-	if page := read(t, mustGet(t, c, srv.URL+"/plans/"+id+"?reset")); !strings.Contains(page, "starts over at week 1") {
-		t.Fatal("reset notice missing")
+	if page := read(t, mustGet(t, c, srv.URL+"/plans/"+id+"?cursor=complete")); !strings.Contains(page, "the plan now counts as complete") {
+		t.Fatal("notice missing")
 	}
-	if home := read(t, mustGet(t, c, srv.URL+"/")); !strings.Contains(home, "week 1 of 1") {
-		t.Fatal("cursor not reset")
+	if home := read(t, mustGet(t, c, srv.URL+"/")); !strings.Contains(home, "You finished all 1 weeks") {
+		t.Fatal("plan not complete")
+	}
+
+	// Activating the 4-week version again keeps the finished plan complete.
+	resp, _ = post(t, c, srv.URL+"/plans/"+id, csrf, url.Values{"doc": {starter}, "action": {"draft"}})
+	if resp.StatusCode != http.StatusSeeOther {
+		t.Fatalf("save draft: %d", resp.StatusCode)
+	}
+	detail = read(t, mustGet(t, c, srv.URL+"/plans/"+id))
+	m = regexp.MustCompile(`/plans/` + id + `/versions/([0-9a-f-]+)/compare`).FindStringSubmatch(detail)
+	if cmp = read(t, mustGet(t, c, srv.URL+"/plans/"+id+"/versions/"+m[1]+"/compare")); !strings.Contains(cmp, "You finished this plan; it stays complete.") {
+		t.Fatalf("comparison:\n%s", cmp)
+	}
+	resp, _ = post(t, c, srv.URL+"/plans/"+id+"/versions/"+m[1]+"/activate", csrf, url.Values{"doc_hash": {docHash(t, cmp)}})
+	if resp.Header.Get("Location") != "/plans/"+id {
+		t.Fatalf("activate redirect: %s", resp.Header.Get("Location"))
+	}
+	if home := read(t, mustGet(t, c, srv.URL+"/")); !strings.Contains(home, "You finished all 4 weeks") {
+		t.Fatal("plan not complete")
+	}
+
+	// A version without the current day continues at the next one.
+	post(t, c, srv.URL+"/plan/choose", csrf, url.Values{"position": {"3:1"}})
+	lowerOnce := strings.Replace(starter, `"name": "Lower",`, `"name": "Lower", "only_weeks": [1, 2],`, 1)
+	resp, _ = post(t, c, srv.URL+"/plans/"+id, csrf, url.Values{"doc": {lowerOnce}, "action": {"draft"}})
+	if resp.StatusCode != http.StatusSeeOther {
+		t.Fatalf("save draft: %d", resp.StatusCode)
+	}
+	detail = read(t, mustGet(t, c, srv.URL+"/plans/"+id))
+	m = regexp.MustCompile(`/plans/` + id + `/versions/([0-9a-f-]+)/compare`).FindStringSubmatch(detail)
+	if cmp = read(t, mustGet(t, c, srv.URL+"/plans/"+id+"/versions/"+m[1]+"/compare")); !strings.Contains(cmp, "Day 2 of week 3 doesn&#39;t exist in this version: you&#39;ll continue at week 4, day 1.") {
+		t.Fatalf("comparison:\n%s", cmp)
+	}
+	resp, _ = post(t, c, srv.URL+"/plans/"+id+"/versions/"+m[1]+"/activate", csrf, url.Values{"doc_hash": {docHash(t, cmp)}})
+	if resp.Header.Get("Location") != "/plans/"+id+"?cursor=moved" {
+		t.Fatalf("activate redirect: %s", resp.Header.Get("Location"))
+	}
+	if page := read(t, mustGet(t, c, srv.URL+"/plans/"+id+"?cursor=moved")); !strings.Contains(page, "you continue at week 4, day 1") {
+		t.Fatalf("notice missing:\n%s", page)
+	}
+}
+
+// A plan that can't be followed says why on its own page.
+func TestFollowRefusalsAreInline(t *testing.T) {
+	srv, c := newApp(t, "alice")
+	csrf := session(t, srv, c)
+	resp, _ := post(t, c, srv.URL+"/plans", csrf, url.Values{"doc": {starter}, "action": {"draft"}})
+	draftOnly := planID(t, resp)
+	resp, body := post(t, c, srv.URL+"/plans/"+draftOnly+"/follow", csrf, nil)
+	if resp.StatusCode != http.StatusConflict || !strings.Contains(body, "Activate a version of this plan before following it.") ||
+		!strings.Contains(body, "Versions") {
+		t.Fatalf("following a draft-only plan: %d\n%s", resp.StatusCode, body)
+	}
+
+	resp, _ = post(t, c, srv.URL+"/plans", csrf, url.Values{"doc": {starter}, "action": {"activate"}})
+	archived := planID(t, resp)
+	post(t, c, srv.URL+"/plans/"+archived+"/archive", csrf, url.Values{"archived": {"1"}})
+	resp, body = post(t, c, srv.URL+"/plans/"+archived+"/follow", csrf, nil)
+	if resp.StatusCode != http.StatusConflict || !strings.Contains(body, "Restore this plan before following it.") ||
+		!strings.Contains(body, "Versions") {
+		t.Fatalf("following an archived plan: %d\n%s", resp.StatusCode, body)
+	}
+	if home := read(t, mustGet(t, c, srv.URL+"/")); !strings.Contains(home, "You are not following a plan") {
+		t.Fatal("a refused plan is followed")
+	}
+}
+
+// docHash is the hash of the reviewed document that a compare page posts.
+func docHash(t *testing.T, page string) string {
+	t.Helper()
+	m := regexp.MustCompile(`name="doc_hash" value="([0-9a-f]+)"`).FindStringSubmatch(page)
+	if m == nil {
+		t.Fatalf("compare page has no doc_hash:\n%s", page)
+	}
+	return m[1]
+}
+
+// If the AI replaces a draft while its compare page is open, Activate takes
+// the user back to the refreshed comparison instead of activating unseen changes.
+func TestActivateRefusesADraftChangedAfterReview(t *testing.T) {
+	srv, c, db := newAppDB(t, "alice")
+	csrf := session(t, srv, c)
+	ctx := context.Background()
+	alice, err := db.UpsertOIDCUser(ctx, auth.DevIssuer, "alice", "alice@localhost", "alice")
+	if err != nil {
+		t.Fatal(err)
+	}
+	plans := &plan.Service{Store: db, Exercises: &exercise.Service{Store: db}}
+	d, err := plans.SaveDraft(ctx, alice, plan.DraftInput{Doc: []byte(starter), Source: "mcp"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	compare := srv.URL + "/plans/" + d.Plan.ID + "/versions/" + d.Version.ID + "/compare"
+	reviewed := docHash(t, read(t, mustGet(t, c, compare)))
+
+	changed := strings.Replace(starter, `"weeks": 4`, `"weeks": 1`, 1)
+	changed = regexp.MustCompile(`\[(\d+(?:\.\d+)?), [^\]]*\]`).ReplaceAllString(changed, "$1")
+	if _, err := plans.SaveDraft(ctx, alice, plan.DraftInput{VersionID: d.Version.ID, Doc: []byte(changed), Source: "mcp"}); err != nil {
+		t.Fatal(err)
+	}
+	activate := srv.URL + "/plans/" + d.Plan.ID + "/versions/" + d.Version.ID + "/activate"
+	resp, _ := post(t, c, activate, csrf, url.Values{"doc_hash": {reviewed}})
+	if resp.StatusCode != http.StatusSeeOther || resp.Header.Get("Location") != "/plans/"+d.Plan.ID+"/versions/"+d.Version.ID+"/compare?changed" {
+		t.Fatalf("activating a changed draft: %d %q", resp.StatusCode, resp.Header.Get("Location"))
+	}
+	if v, _ := plans.Version(ctx, alice, d.Version.ID); v.Status != "draft" {
+		t.Fatalf("changed draft was activated: %+v", v)
+	}
+	page := read(t, mustGet(t, c, compare+"?changed"))
+	if !strings.Contains(page, "changed since you opened it") {
+		t.Fatalf("compare page doesn't explain the refusal:\n%s", page)
+	}
+	resp, _ = post(t, c, activate, csrf, url.Values{"doc_hash": {docHash(t, page)}})
+	if resp.Header.Get("Location") != "/plans/"+d.Plan.ID {
+		t.Fatalf("activating the reviewed draft: %d %q", resp.StatusCode, resp.Header.Get("Location"))
+	}
+}
+
+// Archived plans are read-only: no Edit button, and saving is refused.
+func TestArchivedPlanCannotBeEdited(t *testing.T) {
+	srv, c := newApp(t, "alice")
+	csrf := session(t, srv, c)
+	resp, _ := post(t, c, srv.URL+"/plans", csrf, url.Values{"doc": {starter}, "action": {"activate"}})
+	id := planID(t, resp)
+	post(t, c, srv.URL+"/plans/"+id+"/archive", csrf, url.Values{"archived": {"1"}})
+	if detail := read(t, mustGet(t, c, srv.URL+"/plans/"+id)); strings.Contains(detail, "/plans/"+id+"/edit") {
+		t.Fatal("archived plan offers Edit")
+	}
+	resp, body := post(t, c, srv.URL+"/plans/"+id, csrf, url.Values{"doc": {starter}, "action": {"draft"}})
+	if resp.StatusCode != http.StatusConflict || !strings.Contains(body, "Restore") {
+		t.Fatalf("saving an archived plan: %d\n%s", resp.StatusCode, body)
 	}
 }
 
@@ -175,14 +307,32 @@ func TestChooseRejectsNegativeDay(t *testing.T) {
 func TestOversizedPlanDocumentIsRefused(t *testing.T) {
 	srv, c := newApp(t, "alice")
 	csrf := session(t, srv, c)
-	big := `{"name": "` + strings.Repeat("x", 1<<20) + `"}`
-	resp, body := post(t, c, srv.URL+"/plans/preview", csrf, url.Values{"doc": {big}})
-	if !strings.Contains(body, "too large") {
+	// The 1 MB limit is on the JSON, not its form encoding: a document just
+	// under it is accepted even though punctuation-heavy JSON grows when encoded.
+	filler := strings.Repeat(`{"a":[1,2]},`, (plan.MaxDocBytes-100)/12)
+	fits := `{"name": "fits", "x": [` + strings.TrimSuffix(filler, ",") + `]}`
+	if len(url.Values{"doc": {fits}}.Encode()) <= 2*plan.MaxDocBytes {
+		t.Fatal("test document should encode to well over 1 MB")
+	}
+	resp, body := post(t, c, srv.URL+"/plans/preview", csrf, url.Values{"doc": {fits}})
+	if resp.StatusCode != http.StatusOK || strings.Contains(body, "too large") || strings.Contains(body, "larger than 1 MB") {
+		t.Fatalf("preview of a document under 1 MB: %d\n%.300s", resp.StatusCode, body)
+	}
+
+	big := `{"name": "` + strings.Repeat("x", plan.MaxDocBytes) + `"}`
+	resp, body = post(t, c, srv.URL+"/plans/preview", csrf, url.Values{"doc": {big}})
+	if !strings.Contains(body, "larger than 1 MB") {
 		t.Fatalf("preview of a 1 MB document: %d\n%.300s", resp.StatusCode, body)
 	}
 	resp, body = post(t, c, srv.URL+"/plans", csrf, url.Values{"doc": {big}, "action": {"draft"}})
-	if resp.StatusCode != http.StatusRequestEntityTooLarge || !strings.Contains(body, "too large") {
+	if resp.StatusCode != http.StatusUnprocessableEntity || !strings.Contains(body, "larger than 1 MB") {
 		t.Fatalf("saving a 1 MB document: %d", resp.StatusCode)
+	}
+
+	huge := strings.Repeat("{", 3*plan.MaxDocBytes)
+	resp, body = post(t, c, srv.URL+"/plans", csrf, url.Values{"doc": {huge}, "action": {"draft"}})
+	if resp.StatusCode != http.StatusRequestEntityTooLarge || !strings.Contains(body, "too large") {
+		t.Fatalf("an oversized request: %d", resp.StatusCode)
 	}
 }
 func TestPlanEditorUsesTheEditorSchema(t *testing.T) {

@@ -115,6 +115,28 @@ func TestSessionNotesAndFinish(t *testing.T) {
 	}
 }
 
+// Notes race only against earlier notes edits: a phone whose clock is behind
+// the server's (so its edit predates the session's server-side stamps) still
+// saves its first notes.
+func TestSessionNotesFromASlowClock(t *testing.T) {
+	db := newTestDB(t)
+	ctx := context.Background()
+	u := newUser(t, db, "u")
+	s := newSession(t, db, u.ID, "A")
+	slow := time.Now().Add(-10 * time.Minute)
+
+	if out, err := db.SetSessionNotes(ctx, u.ID, s.ID, "from the phone", slow, "op-1"); err != nil || out != Applied {
+		t.Fatalf("notes from a slow clock: %v, %v", out, err)
+	}
+	if out, _ := db.SetSessionNotes(ctx, u.ID, s.ID, "older edit", slow.Add(-time.Second), "op-2"); out != Ignored {
+		t.Fatalf("older notes edit: %v", out)
+	}
+	got, _ := db.SessionByID(ctx, u.ID, s.ID)
+	if got.Notes != "from the phone" || got.NotesUpdatedAt == nil || !got.NotesUpdatedAt.Equal(slow.UTC().Truncate(time.Millisecond)) {
+		t.Fatalf("session = %+v", got)
+	}
+}
+
 func TestHistoryQueries(t *testing.T) {
 	db := newTestDB(t)
 	ctx := context.Background()
@@ -226,5 +248,29 @@ func TestCreateSessionStartTime(t *testing.T) {
 	}
 	if now := newSession(t, db, u.ID, "now"); time.Since(now.StartedAt) > time.Minute {
 		t.Fatalf("default start = %v", now.StartedAt)
+	}
+}
+
+// Old idempotency records are pruned; recent ones still answer replays.
+func TestDeleteAppliedOpsBefore(t *testing.T) {
+	db := newTestDB(t)
+	ctx := context.Background()
+	alice := newUser(t, db, "alice")
+	sa := newSession(t, db, alice.ID, "A")
+	if _, err := db.UpsertSet(ctx, alice.ID, set(sa.ID, "a-1", 100, t0), "old-op"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.write.ExecContext(ctx, `UPDATE applied_ops SET applied_at = ? WHERE op_id = 'old-op'`, formatTime(t0)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.UpsertSet(ctx, alice.ID, set(sa.ID, "a-2", 100, t0), "new-op"); err != nil {
+		t.Fatal(err)
+	}
+	n, err := db.DeleteAppliedOpsBefore(ctx, t0.Add(time.Hour))
+	if err != nil || n != 1 {
+		t.Fatalf("deleted %d, %v; want 1", n, err)
+	}
+	if out, err := db.UpsertSet(ctx, alice.ID, set(sa.ID, "a-2", 100, t0), "new-op"); err != nil || out != Duplicate {
+		t.Fatalf("recent op replay: %v %v", out, err)
 	}
 }

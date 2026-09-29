@@ -3,7 +3,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   addExercise, addSet, currentStep, deleteSet, finish, groups, logSet, logged, mergeServerSets,
-  failedFor, isPR, newState, parseReps, restAfter, sessionE1RM, settle, skip, status, steps, swap, target, uuidv7, validateValues,
+  failedFor, isPR, lastPR, newState, pendingSetIds, parseReps, restAfter, sessionE1RM, settle, skip, status, steps, swap, target, uuidv7, validateValues,
 } from "../static/js/companion-core.js";
 
 const bar = { kind: "barbell", unit: "kg", config: { bar: 20, plates: [25, 20, 15, 10, 5, 2.5, 1.25] } };
@@ -169,6 +169,22 @@ test("server sets merge in; the newer edit wins", () => {
   assert.equal(steps(b, mergeServerSets(b, newState(b), [extra])).filter((x) => x.g === 0).length, 10);
 });
 
+test("a fresh server copy drops synced sets deleted elsewhere, but never unsynced ones", () => {
+  const b = boot();
+  const [first, second, third] = steps(b, newState(b));
+  let s = logSet(b, newState(b), first, { weight_kg: 70, reps: 5 }, T0).state;
+  const { state: s2, op: kept } = logSet(b, s, second, { weight_kg: 80, reps: 5 }, T0 + 1000);
+  const { state: s3, op: queued } = logSet(b, s2, third, { weight_kg: 80, reps: 5 }, T0 + 2000);
+  // The server has only the second set; the third is still in the outbox.
+  const merged = mergeServerSets(b, s3, [kept.payload], new Set([queued.payload.id]));
+  assert.equal(status(merged, first), "todo", "deleted in history: gone");
+  assert.equal(Object.keys(merged.sets).length, 2);
+  assert.equal(logged(merged, second).weight_kg, 80);
+  assert.equal(logged(merged, third).id, queued.payload.id, "still queued: kept");
+  // Without a pending list (a possibly stale copy, like the page's own bootstrap) nothing is dropped.
+  assert.equal(status(mergeServerSets(b, s3, [kept.payload]), first), "done");
+});
+
 test("finishing and settling the outbox", () => {
   const b = boot();
   const { state, op } = finish(newState(b), T0);
@@ -239,6 +255,23 @@ test("isPR beats the heaviest earlier set at the same reps", () => {
   assert.equal(isPR(boot, state, c), true, "deleted sets don't count");
 });
 
+test("the PR banner follows the last logged set", () => {
+  const b = { ...boot(), exercises: { ...boot().exercises } };
+  b.exercises["barbell-back-squat"] = { ...b.exercises["barbell-back-squat"], prs: { 5: 100 } };
+  const [, first, second] = steps(b, newState(b)); // the two working sets
+  let s = logSet(b, newState(b), first, { weight_kg: 105, reps: 5 }, T0).state;
+  const set = logged(s, first);
+  assert.equal(lastPR(b, s)?.id, set.id);
+  assert.equal(lastPR(b, logSet(b, s, first, { weight_kg: 95, reps: 5 }, T0 + 1000).state), null, "edited below the record");
+  assert.equal(lastPR(b, deleteSet(s, set.id, T0 + 1000).state), null, "deleted");
+  assert.equal(lastPR(b, finish(s, T0 + 1000).state), null, "finished");
+  s = logSet(b, s, second, { weight_kg: 100, reps: 5 }, T0 + 2000).state;
+  assert.equal(lastPR(b, s), null, "the next set isn't a PR");
+  assert.equal(pendingSetIds([
+    { op: "upsert_set", payload: { id: "a" } }, { op: "delete_set", payload: { id: "b" } }, { op: "edit_notes", payload: {} },
+  ]).size, 2);
+});
+
 test("PR compares done_at as times", () => {
   const boot = { exercises: { squat: { name: "Squat", measurement: "weight_reps", prs: {} } }, catalog: [] };
   // Go's JSON drops zero milliseconds: "…:00Z" is earlier than "…:00.500Z" but sorts after it as text.
@@ -247,4 +280,50 @@ test("PR compares done_at as times", () => {
   const state = { sets: { s: synced, l: local } };
   assert.equal(isPR(boot, state, local), true);
   assert.equal(isPR(boot, state, synced), false);
+});
+
+// --- offline data: owner and pruning ---
+
+import { offlineOwner, opsToSync, prunePlan } from "../static/js/companion-core.js";
+
+test("offline data belongs to one user; another user's is discarded", () => {
+  assert.equal(offlineOwner(null, "alice"), "adopt");
+  assert.equal(offlineOwner("alice", "alice"), "keep");
+  assert.equal(offlineOwner("alice", "bob"), "discard");
+  assert.equal(offlineOwner("alice", ""), "unknown"); // signed out or the offline page: nothing to compare
+});
+
+test("only the signed-in user's operations are synced", () => {
+  const outbox = [
+    { op_id: "2", user: "alice", op: "x" },
+    { op_id: "1", user: "bob", op: "x" },
+    { op_id: "3", op: "x" }, // queued before operations named their user
+  ];
+  assert.deepEqual(opsToSync(outbox, "alice").map((o) => o.op_id), ["2", "3"]);
+  assert.ok(opsToSync(outbox, "alice").every((o) => !("user" in o)), "user is not sent");
+  assert.deepEqual(opsToSync(outbox, ""), []);
+});
+
+test("prunePlan drops old synced sessions, their rejects and their pages, never queued work", () => {
+  const now = Date.parse("2026-09-30T12:00:00Z");
+  const day = 86_400_000;
+  const sess = (sessionId, finished, age) => ({ sessionId, finished, savedAt: now - age * day, sets: {} });
+  const sessions = [
+    sess("old-done", true, 20),
+    sess("new-done", true, 3),
+    sess("old-queued", true, 30),
+    sess("stale-open", false, 100),
+    sess("recent-open", false, 30),
+    sess("current", true, 60),
+    // Saved before savedAt existed: its last edit dates it.
+    { sessionId: "legacy", finished: true, sets: { a: { updated_at: "2026-09-01T00:00:00Z" } } },
+    { sessionId: "legacy-new", finished: true, sets: {}, notesAt: "2026-09-29T00:00:00Z" },
+  ];
+  const outbox = [{ op_id: "q", payload: { session_id: "old-queued" } }];
+  const failed = [{ op_id: "f1", payload: { session_id: "old-done" } }, { op_id: "f2", payload: { session_id: "new-done" } }];
+  const pages = ["/sessions/old-done/live", "/sessions/new-done/live", "/sessions/orphan/live", "/sessions/current/live", "/offline"];
+  const plan = prunePlan({ sessions, outbox, failed, pages, now, current: "current" });
+  assert.deepEqual(plan.sessions.sort(), ["legacy", "old-done", "stale-open"]);
+  assert.deepEqual(plan.failed, ["f1"]);
+  assert.deepEqual(plan.pages.sort(), ["/sessions/old-done/live", "/sessions/orphan/live"]);
 });

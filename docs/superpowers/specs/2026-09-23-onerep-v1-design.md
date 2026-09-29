@@ -89,14 +89,14 @@ Conventions: all IDs are UUIDv7 stored as TEXT. Session and set IDs are generate
   - dumbbell: `{ "weights": [2, 4, 6, ...] }`
   - machine / cable: `{ "stack": [5, 10, 15, ...] }` or `{ "min": 5, "step": 5, "max": 100 }`
   - bodyweight: `{}`
-- `exercises`: `id`, `user_id` (NULL = global seed), `slug`, `name`, `measurement` (`weight_reps`|`bw_reps`|`reps`|`time`|`distance_time`), `equipment_kind`, `primary_muscles` JSON array, `secondary_muscles` JSON array, `aliases` JSON array, `hidden`. Unique `(user_id, slug)` (and `slug` among global rows). A user row with the same slug as a global row shadows it for that user.
+- `exercises`: `id`, `user_id` (NULL = global seed), `slug`, `name`, `measurement` (`weight_reps`|`bw_reps`|`reps`|`time`|`distance_time`), `equipment_kind`, `primary_muscles` JSON array, `secondary_muscles` JSON array, `aliases` JSON array, `hidden`, `original` (user rows: 1 = created as a new exercise, 0 = a customized copy of a seeded one). Unique `(user_id, slug)` (and `slug` among global rows). A user row with the same slug as a global row shadows it for that user. See §14 for how user and seeded exercises share slugs.
 - `exercise_alternatives`: `user_id`, `slug`, `alt_slug`. Default alternatives come from seed data; user rows add to them.
-- `user_exercise`: `user_id`, `slug`, `equipment_id` (nullable), `training_max_kg` (nullable), `updated_at`.
+- `user_exercise`: `user_id`, `slug`, `equipment_id` (nullable), `training_max_kg` (nullable), `updated_at`. Keyed by slug like the training log, so it outlives the exercise row: deleting a custom exercise keeps its training max, TM log, equipment link and user-added alternatives, and they come back if the slug is created again. `equipment_id` must point to a profile of the exercise's `equipment_kind`; a link is dropped when its profile changes kind (as when it is deleted), and one left mismatched by a change of the exercise's kind is ignored.
 - `training_max_log`: `id`, `user_id`, `slug`, `old_kg`, `new_kg`, `source` (`web`|`mcp`), `note`, `created_at`.
 
 ### Plans
 
-- `plans`: `id`, `user_id`, `name`, `archived`, `created_at`.
+- `plans`: `id`, `user_id`, `name`, `archived`, `created_at`, `next_version` (the number the next version gets, so a discarded draft's number is never reused).
 - `plan_versions`: `id`, `plan_id`, `version` (int, increasing per plan), `doc` JSON (authored form), `status` (`draft`|`active`|`superseded`), `source` (`web`|`mcp`), `note`, `created_at`. At most one `active` row per plan (partial unique index).
 - `active_plan`: `user_id` (PK), `plan_id`, `cursor_week` (1-based), `cursor_day` (0-based index into days applicable to that week).
 
@@ -199,7 +199,7 @@ Plan preview in the editor shows every week × day expanded with resolved loads.
 - "Next workout" = cursor position. Starting it creates a session for (week, day). Finishing it advances the cursor to the next applicable day; after the last day of a week, to day 0 of the next week.
 - Past the final week the plan is "complete": the home screen offers to restart it or ask the AI for the next block. Restarting resets the cursor.
 - The user can skip the current day (advance without a session) or start any (week, day) manually; starting a manual day moves the cursor to it.
-- Activating a new version of the already-active plan keeps the cursor if the (week, day) still exists in the new version, otherwise resets it to week 1, day 0 and warns in the UI.
+- Activating a new version of the already-active plan never restarts it. The cursor stays if the (week, day) still exists; a finished plan stays complete; a week past the new last week makes the plan complete; a missing day moves to the next day that exists (possibly completing the plan). The comparison page says which will happen before activating.
 - Ad-hoc sessions (`plan_version_id` NULL) never move the cursor; the user adds exercises by slug during the session.
 
 ## 9. Companion mode and offline sync
@@ -288,6 +288,8 @@ The AI cannot modify logged sessions or sets, and cannot activate plans.
 - Embedded file `internal/exercise/seed/exercises.json`: 100–150 common exercises with slug, name, measurement, equipment kind, primary/secondary muscles, aliases, and default alternatives.
 - Muscle vocabulary (fixed enum): chest, front-delts, side-delts, rear-delts, lats, upper-back, traps, biceps, triceps, forearms, abs, obliques, lower-back, glutes, quads, hamstrings, adductors, abductors, calves, neck.
 - Seed is loaded into `exercises` (user_id NULL) at startup, upserting by slug; seeded slugs are never removed, only marked hidden if dropped from the file.
+- User and seeded exercises sharing a slug: the user's row always wins for that user. Editing a seeded exercise makes a customized copy ("customized", "Reset to default" deletes the copy). An exercise the user created stays "custom" even if a later seed adds its slug, and the seed's alternatives don't attach to it. A hidden seeded slug is free to create: it becomes the user's own exercise (and picks up any history under that slug); a customized copy of a seeded exercise that gets hidden shows as custom, since there's no visible default to reset to.
+- Deleting a custom exercise removes only its definition; the per-slug settings and history stay (§5, `user_exercise`). The delete confirmation says so.
 
 ## 15. Operations
 

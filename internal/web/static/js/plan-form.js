@@ -95,7 +95,11 @@ async function start(textarea) {
   // The ready pass shows json-editor's own validation once even with
   // show_errors "never"; the server's problems are the only ones shown.
   editor.on("ready", () => { editor.showValidationErrors([]); markProblems(); });
-  editor.on("change", writeBack);
+  // json-editor's change pass clears every field's errors just before it
+  // fires "change"; putting the last preview's problems back in the same
+  // frame keeps them from flickering. A marker goes once a new preview no
+  // longer reports it.
+  editor.on("change", () => { writeBack(); markProblems(); });
   switcher.addEventListener("click", (e) => {
     const v = e.target.closest("[data-view]")?.dataset.view;
     if (!v || v === view) return;

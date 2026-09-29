@@ -31,6 +31,14 @@ func newApp(t *testing.T, devUser string) (*httptest.Server, *http.Client) {
 // newAppDB is newApp that also returns the database, with the catalog seeded.
 func newAppDB(t *testing.T, devUser string) (*httptest.Server, *http.Client, *store.DB) {
 	t.Helper()
+	s := newServer(t, devUser)
+	srv, client := serve(t, s)
+	return srv, client, s.DB
+}
+
+// newServer is the app's Server over a fresh database with the catalog seeded.
+func newServer(t *testing.T, devUser string) *Server {
+	t.Helper()
 	db := storetest.New(t)
 	if err := exercise.Seed(context.Background(), db); err != nil {
 		t.Fatal(err)
@@ -41,13 +49,19 @@ func newAppDB(t *testing.T, devUser string) (*httptest.Server, *http.Client, *st
 	s.Plans = &plan.Service{Store: db, Exercises: s.Exercises, History: db}
 	s.Training = &training.Service{Store: db, Plans: s.Plans, Exercises: s.Exercises}
 	s.Stats = &stats.Service{Store: db, Exercises: s.Exercises}
+	return s
+}
+
+// serve runs s's router and returns a client with a cookie jar that doesn't follow redirects.
+func serve(t *testing.T, s *Server) (*httptest.Server, *http.Client) {
+	t.Helper()
 	srv := httptest.NewServer(s.Routes())
 	t.Cleanup(srv.Close)
 	jar, _ := cookiejar.New(nil)
 	client := &http.Client{Jar: jar, CheckRedirect: func(*http.Request, []*http.Request) error {
 		return http.ErrUseLastResponse
 	}}
-	return srv, client, db
+	return srv, client
 }
 
 func read(t *testing.T, resp *http.Response) string {
@@ -110,6 +124,31 @@ func TestLogoutRequiresCSRF(t *testing.T) {
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusSeeOther || resp.Header.Get("Location") != "/auth/signed-out" {
 		t.Fatalf("logout: %d %s", resp.StatusCode, resp.Header.Get("Location"))
+	}
+	// The browser drops its offline copy of this user's data (the IndexedDB
+	// outbox, cached workout pages), so the next user never sees or syncs it.
+	if got := resp.Header.Get("Clear-Site-Data"); got != `"cache", "storage"` {
+		t.Fatalf("Clear-Site-Data = %q", got)
+	}
+}
+
+// Signed-in pages and /api/csrf name their user, so companion.js discards
+// offline data another user left and never syncs it under the wrong session.
+// The signed-out page asks it to clear offline data, for browsers that
+// ignore Clear-Site-Data.
+func TestOfflineDataOwnerMarkers(t *testing.T) {
+	srv, c := newApp(t, "alice")
+	session(t, srv, c)
+	m := regexp.MustCompile(`data-user="([0-9a-f-]{36})"`).FindStringSubmatch(read(t, mustGet(t, c, srv.URL+"/")))
+	if m == nil {
+		t.Fatal("signed-in page does not name its user")
+	}
+	if body := read(t, mustGet(t, c, srv.URL+"/api/csrf")); !strings.Contains(body, `"user_id":"`+m[1]+`"`) {
+		t.Fatalf("/api/csrf does not name user %s: %s", m[1], body)
+	}
+	html := read(t, mustGet(t, c, srv.URL+"/auth/signed-out"))
+	if !strings.Contains(html, "data-signed-out") {
+		t.Fatalf("signed-out page has no data-signed-out marker:\n%s", html)
 	}
 }
 

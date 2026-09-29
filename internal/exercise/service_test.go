@@ -5,6 +5,7 @@ import (
 	"errors"
 	"math"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/LongerHV/onerep/internal/calc"
@@ -260,3 +261,216 @@ func TestPercentOfTM(t *testing.T) {
 }
 
 func ptr(v float64) *float64 { return &v }
+
+// resync syncs the embedded seed plus extra entries, or without the slugs in
+// drop, as a later release of the seed file would.
+func resync(t *testing.T, s *Service, extra []store.Exercise, extraAlts map[string][]string, drop ...string) {
+	t.Helper()
+	exercises, alts, err := loadSeed()
+	if err != nil {
+		t.Fatal(err)
+	}
+	exercises = slices.DeleteFunc(append(exercises, extra...), func(e store.Exercise) bool { return slices.Contains(drop, e.Slug) })
+	for k, v := range extraAlts {
+		alts[k] = append(alts[k], v...)
+	}
+	if err := s.Store.(*store.DB).SyncSeed(context.Background(), exercises, alts); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestSaveSettingsValidatesEverythingFirst(t *testing.T) {
+	s, u := newService(t)
+	ctx := context.Background()
+	if err := s.EnsureStarterEquipment(ctx, u); err != nil {
+		t.Fatal(err)
+	}
+	home, err := s.SaveEquipment(ctx, store.Equipment{UserID: u.ID, Name: "Home bar", Spec: calc.Equipment{
+		Kind: calc.KindBarbell, Unit: calc.UnitKg, Config: calc.EquipmentConfig{Bar: 15, Plates: []float64{10}}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	bells, _ := s.Store.DefaultEquipment(ctx, u.ID, calc.KindDumbbell)
+	const squat = "barbell-back-squat"
+
+	var fe FieldErrors
+	err = s.SaveSettings(ctx, u.ID, squat, SettingsInput{EquipmentID: home.ID, SetTrainingMax: true, TrainingMaxKg: ptr(2000)}, "web")
+	if !errors.As(err, &fe) || !strings.Contains(fe["training_max"], "1,500 kg") {
+		t.Fatalf("TM over the limit: %v", err)
+	}
+	if ue, _ := s.Store.UserExercise(ctx, u.ID, squat); ue.EquipmentID != "" || ue.TrainingMaxKg != nil {
+		t.Fatalf("a rejected save changed the settings: %+v", ue)
+	}
+
+	err = s.SaveSettings(ctx, u.ID, squat, SettingsInput{EquipmentID: bells.ID, SetTrainingMax: true, TrainingMaxKg: ptr(140)}, "web")
+	if !errors.As(err, &fe) || fe["equipment_id"] == "" {
+		t.Fatalf("dumbbells for a barbell exercise: %v", err)
+	}
+	if ue, _ := s.Store.UserExercise(ctx, u.ID, squat); ue.EquipmentID != "" || ue.TrainingMaxKg != nil {
+		t.Fatalf("a rejected save changed the settings: %+v", ue)
+	}
+	if err := s.LinkEquipment(ctx, u.ID, squat, bells.ID); !errors.As(err, &fe) || fe["equipment_id"] == "" {
+		t.Fatalf("LinkEquipment with the wrong kind: %v", err)
+	}
+
+	other, _ := s.Store.(*store.DB).UpsertOIDCUser(ctx, "iss", "bob", "", "bob")
+	if err := s.SaveSettings(ctx, other.ID, squat, SettingsInput{EquipmentID: home.ID}, "web"); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("another user's profile: %v", err)
+	}
+	if err := s.SaveSettings(ctx, u.ID, "nope", SettingsInput{}, "web"); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("unknown exercise: %v", err)
+	}
+
+	err = s.SaveSettings(ctx, u.ID, squat, SettingsInput{EquipmentID: home.ID, SetTrainingMax: true, TrainingMaxKg: ptr(140)}, "web")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ue, _ := s.Store.UserExercise(ctx, u.ID, squat); ue.EquipmentID != home.ID || *ue.TrainingMaxKg != 140 {
+		t.Fatalf("saved: %+v", ue)
+	}
+	// Without SetTrainingMax only the link changes.
+	if err := s.SaveSettings(ctx, u.ID, squat, SettingsInput{}, "web"); err != nil {
+		t.Fatal(err)
+	}
+	if ue, _ := s.Store.UserExercise(ctx, u.ID, squat); ue.EquipmentID != "" || *ue.TrainingMaxKg != 140 {
+		t.Fatalf("link only: %+v", ue)
+	}
+}
+
+// A link made before the exercise's kind changed is ignored: the exercise
+// rounds with the default profile for its new kind.
+func TestSettingsIgnoresLinkOfAnotherKind(t *testing.T) {
+	s, u := newService(t)
+	ctx := context.Background()
+	if err := s.EnsureStarterEquipment(ctx, u); err != nil {
+		t.Fatal(err)
+	}
+	bar, _ := s.Store.DefaultEquipment(ctx, u.ID, calc.KindBarbell)
+	if _, err := s.Create(ctx, u.ID, validInput("zercher-squat")); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.LinkEquipment(ctx, u.ID, "zercher-squat", bar.ID); err != nil {
+		t.Fatal(err)
+	}
+	in := validInput("zercher-squat")
+	in.EquipmentKind = calc.KindDumbbell
+	ex, err := s.Update(ctx, u.ID, in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	st, err := s.Settings(ctx, u.ID, ex)
+	if err != nil || st.Linked || st.Equipment == nil || st.Equipment.Spec.Kind != calc.KindDumbbell {
+		t.Fatalf("settings after the kind changed: %+v, %v", st, err)
+	}
+}
+
+// An exercise the user created stays theirs when a later seed adds its slug:
+// it is not "customized", and the seed's alternatives don't attach to it.
+func TestCreatedExerciseSurvivesSeedCollision(t *testing.T) {
+	s, u := newService(t)
+	ctx := context.Background()
+	if _, err := s.Create(ctx, u.ID, validInput("zercher-squat")); err != nil {
+		t.Fatal(err)
+	}
+	seeded := store.Exercise{Slug: "zercher-squat", Name: "Seeded Zercher", Measurement: "weight_reps",
+		EquipmentKind: "barbell", PrimaryMuscles: []string{"quads"}}
+	resync(t, s, []store.Exercise{seeded}, map[string][]string{
+		"zercher-squat": {"barbell-front-squat"}, "barbell-back-squat": {"zercher-squat"}})
+
+	got, err := s.Get(ctx, u.ID, "zercher-squat")
+	if err != nil || got.Name != "Zercher Squat" || !got.Custom() || got.Overrides {
+		t.Fatalf("created exercise after the collision: %+v, %v", got, err)
+	}
+	if alts, _ := s.Alternatives(ctx, u.ID, "zercher-squat"); len(alts) != 0 {
+		t.Fatalf("seeded alternatives attached to the user's exercise: %+v", alts)
+	}
+	alts, _ := s.Alternatives(ctx, u.ID, "barbell-back-squat")
+	for _, a := range alts {
+		if a.Exercise.Slug == "zercher-squat" {
+			t.Fatalf("the user's exercise became a seeded alternative: %+v", alts)
+		}
+	}
+	// Alternatives the user adds still count.
+	if err := s.AddAlternative(ctx, u.ID, "zercher-squat", "barbell-front-squat"); err != nil {
+		t.Fatal(err)
+	}
+	if alts, _ := s.Alternatives(ctx, u.ID, "zercher-squat"); len(alts) != 1 || !alts[0].UserAdded {
+		t.Fatalf("user-added alternative: %+v", alts)
+	}
+}
+
+// A seeded exercise dropped from the seed is hidden, not gone: its slug can be
+// created again as the user's own exercise, which then owns that slug's history
+// and settings.
+func TestCreateOverHiddenSeed(t *testing.T) {
+	s, u := newService(t)
+	ctx := context.Background()
+	resync(t, s, nil, nil, "barbell-back-squat")
+	if hidden, _ := s.Get(ctx, u.ID, "barbell-back-squat"); !hidden.Hidden {
+		t.Fatalf("not hidden: %+v", hidden)
+	}
+
+	in := validInput("barbell-back-squat")
+	in.Name = "My Back Squat"
+	got, err := s.Create(ctx, u.ID, in)
+	if err != nil || !got.Custom() || got.Overrides || got.Name != "My Back Squat" {
+		t.Fatalf("create over a hidden seed: %+v, %v", got, err)
+	}
+	if cat, _ := s.Catalog(ctx, u.ID, "My Back Squat"); len(cat) != 1 {
+		t.Fatalf("not in the catalog: %+v", cat)
+	}
+	var fe FieldErrors
+	if _, err := s.Create(ctx, u.ID, in); !errors.As(err, &fe) || fe["slug"] == "" {
+		t.Fatalf("creating it twice: %v", err)
+	}
+
+	// Even if the seed brings the slug back, it stays the user's exercise.
+	resync(t, s, nil, nil)
+	if got, _ := s.Get(ctx, u.ID, "barbell-back-squat"); got.Name != "My Back Squat" || got.Overrides {
+		t.Fatalf("after the seed brought it back: %+v", got)
+	}
+}
+
+// Deleting a custom exercise keeps its settings: history is keyed by slug, so
+// the training max, its log, the equipment link and added alternatives stay
+// with the slug and come back if it is created again.
+func TestDeleteCustomExerciseKeepsSettings(t *testing.T) {
+	s, u := newService(t)
+	ctx := context.Background()
+	if err := s.EnsureStarterEquipment(ctx, u); err != nil {
+		t.Fatal(err)
+	}
+	bar, _ := s.Store.DefaultEquipment(ctx, u.ID, calc.KindBarbell)
+	const slug = "zercher-squat"
+	if _, err := s.Create(ctx, u.ID, validInput(slug)); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SaveSettings(ctx, u.ID, slug, SettingsInput{EquipmentID: bar.ID, SetTrainingMax: true, TrainingMaxKg: ptr(120)}, "web"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.AddAlternative(ctx, u.ID, slug, "barbell-front-squat"); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := s.Delete(ctx, u.ID, slug); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Get(ctx, u.ID, slug); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("deleted exercise still found: %v", err)
+	}
+
+	ex, err := s.Create(ctx, u.ID, validInput(slug))
+	if err != nil {
+		t.Fatal(err)
+	}
+	st, err := s.Settings(ctx, u.ID, ex)
+	if err != nil || !st.Linked || st.Equipment.ID != bar.ID || st.TrainingMaxKg == nil || *st.TrainingMaxKg != 120 {
+		t.Fatalf("settings after re-creating: %+v, %v", st, err)
+	}
+	if hist, _ := s.TrainingMaxHistory(ctx, u.ID, slug); len(hist) != 1 {
+		t.Fatalf("TM history after re-creating: %+v", hist)
+	}
+	if alts, _ := s.Alternatives(ctx, u.ID, slug); len(alts) != 1 {
+		t.Fatalf("alternatives after re-creating: %+v", alts)
+	}
+}

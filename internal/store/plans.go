@@ -126,28 +126,50 @@ func insertVersion(ctx context.Context, tx *sql.Tx, planID string, doc []byte, s
 		return PlanVersion{}, err
 	}
 	v := PlanVersion{ID: id, PlanID: planID, Doc: doc, Status: status, Source: source, Note: note, CreatedAt: time.Now().UTC()}
+	// plans.next_version keeps discarded drafts' numbers from coming back; it
+	// is 0 on plans from before the counter, which continue after their
+	// highest version.
 	err = tx.QueryRowContext(ctx, `INSERT INTO plan_versions (id, plan_id, version, doc, status, source, note, created_at)
-		VALUES (?, ?, (SELECT coalesce(max(version), 0) + 1 FROM plan_versions WHERE plan_id = ?), ?, ?, ?, ?, ?)
+		VALUES (?, ?, (SELECT max(p.next_version, coalesce((SELECT max(version) FROM plan_versions WHERE plan_id = p.id), 0) + 1)
+			FROM plans p WHERE p.id = ?), ?, ?, ?, ?, ?)
 		RETURNING version`,
 		v.ID, planID, planID, string(doc), status, source, note, formatTime(v.CreatedAt)).Scan(&v.Version)
+	if err != nil {
+		return PlanVersion{}, err
+	}
+	_, err = tx.ExecContext(ctx, `UPDATE plans SET next_version = ? WHERE id = ?`, v.Version+1, planID)
 	return v, err
 }
 
+// PlanListing is a plan as listed: its active version's number and how many
+// drafts it has, without any documents.
+type PlanListing struct {
+	Plan
+	ActiveVersion int // 0 when the plan has only drafts
+	Drafts        int
+}
+
 // ListPlans returns the user's plans, unarchived first, by name.
-func (db *DB) ListPlans(ctx context.Context, userID string) ([]Plan, error) {
-	rows, err := db.read.QueryContext(ctx, `SELECT `+planColumns+` FROM plans WHERE user_id = ?
-		ORDER BY archived, name COLLATE NOCASE`, userID)
+func (db *DB) ListPlans(ctx context.Context, userID string) ([]PlanListing, error) {
+	rows, err := db.read.QueryContext(ctx, `SELECT `+planColumns+`,
+			coalesce((SELECT version FROM plan_versions WHERE plan_id = plans.id AND status = 'active'), 0),
+			(SELECT count(*) FROM plan_versions WHERE plan_id = plans.id AND status = 'draft')
+		FROM plans WHERE user_id = ? ORDER BY archived, name COLLATE NOCASE`, userID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var out []Plan
+	var out []PlanListing
 	for rows.Next() {
-		p, err := scanPlan(rows)
-		if err != nil {
+		var l PlanListing
+		var created string
+		if err := rows.Scan(&l.ID, &l.UserID, &l.Name, &l.Archived, &created, &l.ActiveVersion, &l.Drafts); err != nil {
 			return nil, err
 		}
-		out = append(out, p)
+		if l.CreatedAt, err = parseTime(created); err != nil {
+			return nil, err
+		}
+		out = append(out, l)
 	}
 	return out, rows.Err()
 }
@@ -195,15 +217,21 @@ func (db *DB) ActivePlanVersion(ctx context.Context, userID, planID string) (Pla
 }
 
 // ActivateVersion makes a draft (or an older superseded version) the plan's
-// active version and renames the plan to name, the version's document name.
-func (db *DB) ActivateVersion(ctx context.Context, userID, versionID, name string) error {
+// active version. check gets the version's document, read in the same
+// transaction, and returns the name to give the plan; an error from check
+// aborts the activation and is returned as is.
+func (db *DB) ActivateVersion(ctx context.Context, userID, versionID string, check func(doc []byte) (name string, err error)) error {
 	return db.tx(ctx, func(tx *sql.Tx) error {
-		var planID string
-		err := tx.QueryRowContext(ctx, `SELECT v.plan_id FROM plan_versions v JOIN plans p ON p.id = v.plan_id
-			WHERE p.user_id = ? AND v.id = ?`, userID, versionID).Scan(&planID)
+		var planID, doc string
+		err := tx.QueryRowContext(ctx, `SELECT v.plan_id, v.doc FROM plan_versions v JOIN plans p ON p.id = v.plan_id
+			WHERE p.user_id = ? AND v.id = ?`, userID, versionID).Scan(&planID, &doc)
 		if errors.Is(err, sql.ErrNoRows) {
 			return ErrNotFound
 		}
+		if err != nil {
+			return err
+		}
+		name, err := check([]byte(doc))
 		if err != nil {
 			return err
 		}
@@ -262,8 +290,9 @@ func (db *DB) ClearActivePlan(ctx context.Context, userID string) error {
 var ErrNotDraft = errors.New("only draft versions can be changed")
 
 // UpdateDraftVersion replaces a draft's document (spec §10: drafts are
-// mutable, active and superseded versions are not).
-func (db *DB) UpdateDraftVersion(ctx context.Context, userID, versionID string, doc []byte, source, note string) (PlanVersion, error) {
+// mutable, active and superseded versions are not). When the draft is its
+// plan's only version, the plan is named after it, so it's renamed to name.
+func (db *DB) UpdateDraftVersion(ctx context.Context, userID, versionID, name string, doc []byte, source, note string) (PlanVersion, error) {
 	v, err := db.PlanVersionByID(ctx, userID, versionID)
 	if err != nil {
 		return PlanVersion{}, err
@@ -271,13 +300,22 @@ func (db *DB) UpdateDraftVersion(ctx context.Context, userID, versionID string, 
 	if v.Status != PlanDraft {
 		return PlanVersion{}, ErrNotDraft
 	}
-	res, err := db.write.ExecContext(ctx, `UPDATE plan_versions SET doc = ?, source = ?, note = ?
-		WHERE id = ? AND status = 'draft'`, string(doc), source, note, versionID)
+	err = db.tx(ctx, func(tx *sql.Tx) error {
+		res, err := tx.ExecContext(ctx, `UPDATE plan_versions SET doc = ?, source = ?, note = ?
+			WHERE id = ? AND status = 'draft'`, string(doc), source, note, versionID)
+		if err != nil {
+			return err
+		}
+		if err := mustAffect(res); err != nil {
+			return ErrNotDraft // activated in between
+		}
+		_, err = tx.ExecContext(ctx, `UPDATE plans SET name = ? WHERE id = ? AND user_id = ?
+			AND NOT EXISTS (SELECT 1 FROM plan_versions WHERE plan_id = ? AND id != ?)`,
+			name, v.PlanID, userID, v.PlanID, versionID)
+		return err
+	})
 	if err != nil {
 		return PlanVersion{}, err
-	}
-	if err := mustAffect(res); err != nil {
-		return PlanVersion{}, ErrNotDraft // activated in between
 	}
 	v.Doc, v.Source, v.Note = doc, source, note
 	return v, nil

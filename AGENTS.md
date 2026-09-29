@@ -27,7 +27,7 @@ The dev shell sets `CGO_ENABLED=0` and `ONEREP_ENV=dev`.
 | Lint | `task lint` |
 | Everything CI runs | `task ci` |
 | New migration after editing `internal/store/schema.sql` | `task migrate:diff NAME=<snake_case>` |
-| Browser end-to-end checks (offline workout logging, the plan form editor; headless Chromium) | `task e2e` |
+| Browser end-to-end checks (offline workout logging, the plan form editor, logout clearing offline data; headless Chromium) | `task e2e` |
 | Container image (local, no push) | `task image` |
 
 ## Layout
@@ -50,7 +50,7 @@ internal/web/          chi router, handlers, views/ (templ), static/ (embedded; 
                          static/js/companion*.js + sw.js: offline workout screen and service worker
                          static/js/stats.js + chart-data.js: uPlot charts from /api/stats/*
                          static/js/plan-form*.js: plan editor form (vendored json-editor) and its pure logic
-test/e2e/              browser end-to-end checks (harness.mjs; companion.mjs, plan-editor.mjs), Node + Chrome DevTools Protocol, no npm deps
+test/e2e/              browser end-to-end checks (harness.mjs; companion.mjs, plan-editor.mjs, logout.mjs), Node + Chrome DevTools Protocol, no npm deps
 testdata/calc_cases.json  shared Go/JS calc test vectors
 ```
 
