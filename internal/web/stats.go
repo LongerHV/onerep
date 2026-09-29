@@ -30,13 +30,13 @@ type e1rmPoint struct {
 
 func (s *Server) apiE1RM(w http.ResponseWriter, r *http.Request) {
 	u := user(r)
-	st, err := s.Stats.ExerciseStats(r.Context(), u, chi.URLParam(r, "slug"))
+	series, err := s.Stats.E1RMSeries(r.Context(), u, chi.URLParam(r, "slug"))
 	if err != nil {
 		s.failJSON(w, r, err)
 		return
 	}
-	points := make([]e1rmPoint, 0, len(st.Series))
-	for _, p := range st.Series {
+	points := make([]e1rmPoint, 0, len(series))
+	for _, p := range series {
 		points = append(points, e1rmPoint{T: p.DoneAt.Unix(), E1RM: round1(calc.FromKg(p.E1RMKg, u.Unit)), RPEBased: p.RPEBased})
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"unit": u.Unit, "points": points})
