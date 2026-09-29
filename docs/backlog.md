@@ -5,10 +5,7 @@ Known issues, deferred on purpose: each was found in a milestone's final review 
 ## Operations and deployment
 
 - **No favicon, app icons or web app manifest.** `/favicon.ico` is a 404, and installing onerep on a phone shows a generic icon and name. Fix: an icon set and a `manifest.webmanifest` (name, icons, `display: standalone`, theme colours) linked from the layout, both added to the service worker shell. (`views/layout.templ`, `static/`, `static/js/sw.js`)
-- **`migrate` and `backup` need the full server config.** `config.Load` requires `ONEREP_BASE_URL` and the OIDC settings for every subcommand, so a host-side cron backup needs the client secret. Fix: only validate those for `serve`. (`cmd/onerep/main.go`)
-- **Base URL with a path is accepted but unsupported.** `https://host/onerep` passes validation, but routes, assets and the cookie path are absolute. Fix: reject a non-empty path, or document that onerep must be served at the root. (`internal/config/config.go`)
 - **Static assets are unversioned and cached for an hour.** Users can see stale CSS and JS for up to an hour after an upgrade. Fix: content-hashed URLs, served as immutable. (`internal/web/static.go`)
-- **A second SIGTERM or Ctrl-C during shutdown is ignored.** Fix: call `stop()` as soon as the first signal arrives. (`cmd/onerep/main.go`)
 
 ## Auth
 

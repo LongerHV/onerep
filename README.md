@@ -37,7 +37,7 @@ provider announces it, over TLS the container trusts.
 |---|---|---|
 | `ONEREP_DB` | `./onerep.db` | SQLite database path |
 | `ONEREP_LISTEN` | `:8080` | Listen address |
-| `ONEREP_BASE_URL` | — (dev: `http://localhost:8080`) | Public URL; `https` enables Secure cookies |
+| `ONEREP_BASE_URL` | — (dev: `http://localhost:8080`) | Public URL, without a path (onerep must be served at the root of its host); `https` enables Secure cookies |
 | `ONEREP_OIDC_ISSUER` / `_CLIENT_ID` | — | OIDC provider (issuer URL exactly as announced, client ID) |
 | `ONEREP_OIDC_CLIENT_SECRET` | — | Client secret; unset for a public client (PKCE only) |
 | `ONEREP_AUTO_MIGRATE` | `true` | Apply migrations on startup |
@@ -45,6 +45,7 @@ provider announces it, over TLS the container trusts.
 | `ONEREP_DEV_USER` | — | Dev only: sign everyone in as this user, no IdP |
 
 Commands: `onerep serve` (default), `onerep migrate`, `onerep backup <path>`.
+Only `serve` needs `ONEREP_BASE_URL` and the OIDC settings; `migrate` and `backup` need just `ONEREP_DB`.
 For continuous backups, run [Litestream](https://litestream.io) next to the database.
 
 ## Connecting an AI assistant (MCP)
