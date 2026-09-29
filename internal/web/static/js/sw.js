@@ -4,19 +4,25 @@
 const VERSION = "__VERSION__";
 const SHELL = `shell-${VERSION}`;
 const PAGES = "pages"; // live workout pages, kept across releases
+// Content-hashed URLs of the static files ("/static/app.css" →
+// "/static/app.css?v=…"), filled in by the server like VERSION: the shell
+// caches exactly the URLs the pages reference.
+const ASSETS = {/*ASSETS*/};
 const SHELL_FILES = [
   "/offline",
-  "/static/app.css",
-  "/static/vendor/htmx.min.js",
-  "/static/vendor/uplot/uPlot.min.css",
-  "/static/js/calc.js",
-  "/static/js/chart-data.js",
-  "/static/js/companion-core.js",
-  "/static/js/companion.js",
-  "/static/js/plan-form.js",
-  "/static/js/plan-form-core.js",
-  "/static/js/plan-form-theme.js",
-  "/static/js/stats.js",
+  ...[
+    "/static/app.css",
+    "/static/vendor/htmx.min.js",
+    "/static/vendor/uplot/uPlot.min.css",
+    "/static/js/calc.js",
+    "/static/js/chart-data.js",
+    "/static/js/companion-core.js",
+    "/static/js/companion.js",
+    "/static/js/plan-form.js",
+    "/static/js/plan-form-core.js",
+    "/static/js/plan-form-theme.js",
+    "/static/js/stats.js",
+  ].map((path) => ASSETS[path] || path),
 ];
 
 self.addEventListener("install", (event) => {
@@ -42,8 +48,10 @@ self.addEventListener("fetch", (event) => {
   if (req.method !== "GET" || url.origin !== location.origin) return;
 
   if (url.pathname.startsWith("/static/")) {
-    // Cache first: static files are versioned with the shell.
-    event.respondWith(caches.match(req).then((hit) => hit || fetch(req)));
+    // Cache first: static files are versioned with the shell. The hash is
+    // ignored, so a page cached by an older release still finds its files
+    // offline (the current ones).
+    event.respondWith(caches.match(req, { ignoreSearch: true }).then((hit) => hit || fetch(req)));
     return;
   }
   if (req.mode === "navigate" && isLive(url)) {

@@ -15,7 +15,8 @@ const started = new WeakSet();
 function loadLibrary() {
   lib ??= new Promise((resolve, reject) => {
     const s = document.createElement("script");
-    s.src = "/static/vendor/json-editor/jsoneditor.js";
+    // Resolved through the page's import map, to the content-hashed URL.
+    s.src = import.meta.resolve("/static/vendor/json-editor/jsoneditor.js");
     s.onload = () => { register(window.JSONEditor); resolve(window.JSONEditor); };
     s.onerror = () => { lib = undefined; reject(new Error("json-editor failed to load")); };
     document.head.append(s);

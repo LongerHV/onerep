@@ -7,6 +7,8 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+
+	"github.com/LongerHV/onerep/internal/web/static"
 )
 
 // get sends a GET with extra headers.
@@ -105,7 +107,8 @@ func TestLayoutBoostsNavigation(t *testing.T) {
 	full := read(t, mustGet(t, c, srv.URL+"/"))
 	for _, want := range []string{
 		`hx-boost="true"`, `hx-target="#main"`, `id="main"`, `name="htmx-config"`,
-		`action="/auth/logout" hx-boost="false"`, `src="/static/js/plan-form.js"`,
+		`action="/auth/logout" hx-boost="false"`, `src="` + static.URL("js/plan-form.js") + `"`,
+		`href="` + static.URL("app.css") + `"`, `<script type="importmap">`,
 	} {
 		if !strings.Contains(full, want) {
 			t.Fatalf("layout misses %s", want)
