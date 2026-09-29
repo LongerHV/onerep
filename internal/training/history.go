@@ -35,6 +35,23 @@ func (s *Service) Session(ctx context.Context, user store.User, id string) (stor
 	return sess, sets, err
 }
 
+// SessionSets returns the sets of one of the user's sessions as the companion
+// sees them, so it can drop sets deleted elsewhere.
+func (s *Service) SessionSets(ctx context.Context, user store.User, id string) ([]SetInput, error) {
+	if _, err := s.Store.SessionByID(ctx, user.ID, id); err != nil {
+		return nil, err
+	}
+	sets, err := s.Store.SessionSets(ctx, user.ID, id)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]SetInput, 0, len(sets))
+	for _, set := range sets {
+		out = append(out, toInput(set))
+	}
+	return out, nil
+}
+
 // SaveSet creates or corrects a set from the history editor. The edit is
 // stamped with the server's clock, so it wins over older companion edits.
 func (s *Service) SaveSet(ctx context.Context, user store.User, in SetInput) error {

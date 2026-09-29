@@ -113,6 +113,54 @@ func TestUserExerciseShadowsGlobal(t *testing.T) {
 	}
 }
 
+// Only a customized copy of a visible seeded exercise overrides it. An exercise
+// the user created stays theirs when the seed later gains the same slug, and a
+// copy of a hidden seeded exercise has nothing visible to reset to.
+func TestOverridesOnlyVisibleSeedCopies(t *testing.T) {
+	db := newTestDB(t)
+	ctx := context.Background()
+	u := newUser(t, db, "u")
+
+	mine := seedExercise("zercher", "My Zercher")
+	mine.Original = true
+	if _, err := db.SaveUserExercise(ctx, u.ID, mine); err != nil {
+		t.Fatal(err)
+	}
+	copyOf := seedExercise("squat", "My Squat")
+	if err := db.SyncSeed(ctx, []Exercise{seedExercise("squat", "Squat"), seedExercise("bench", "Bench"),
+		seedExercise("zercher", "Zercher Squat")}, nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.SaveUserExercise(ctx, u.ID, copyOf); err != nil {
+		t.Fatal(err)
+	}
+	benchCopy := seedExercise("bench", "My Bench")
+	if _, err := db.SaveUserExercise(ctx, u.ID, benchCopy); err != nil {
+		t.Fatal(err)
+	}
+
+	if got, _ := db.ExerciseBySlug(ctx, u.ID, "zercher"); !got.Custom() || got.Overrides || !got.Original || got.Name != "My Zercher" {
+		t.Fatalf("created exercise after the seed gained its slug: %+v", got)
+	}
+	if got, _ := db.ExerciseBySlug(ctx, u.ID, "squat"); !got.Overrides || got.Original {
+		t.Fatalf("customized copy: %+v", got)
+	}
+	// Saving the created exercise again keeps it original.
+	mine.Original = false
+	mine.Name = "My Zercher v2"
+	if got, _ := db.SaveUserExercise(ctx, u.ID, mine); !got.Original || got.Overrides {
+		t.Fatalf("resaved: %+v", got)
+	}
+
+	// bench is dropped from the seed: the copy no longer overrides anything.
+	if err := db.SyncSeed(ctx, []Exercise{seedExercise("squat", "Squat"), seedExercise("zercher", "Zercher Squat")}, nil); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := db.ExerciseBySlug(ctx, u.ID, "bench"); !got.Custom() || got.Overrides {
+		t.Fatalf("copy of a hidden seed: %+v", got)
+	}
+}
+
 func TestAlternatives(t *testing.T) {
 	db := newTestDB(t)
 	ctx := context.Background()

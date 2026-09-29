@@ -79,3 +79,44 @@ func TestSetExerciseEquipment(t *testing.T) {
 		t.Fatalf("deleted equipment still linked: %+v", ue)
 	}
 }
+
+func TestSaveExerciseSettings(t *testing.T) {
+	db := newTestDB(t)
+	ctx := context.Background()
+	alice, bob := newUser(t, db, "alice"), newUser(t, db, "bob")
+	bar, err := db.SaveEquipment(ctx, barbell(alice.ID, "bar", false))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = db.SaveExerciseSettings(ctx, alice.ID, "squat", ExerciseSettings{
+		EquipmentID: bar.ID, SetTrainingMax: true, TrainingMaxKg: kg(100), Source: "web"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ue, _ := db.UserExercise(ctx, alice.ID, "squat")
+	if ue.EquipmentID != bar.ID || ue.TrainingMaxKg == nil || *ue.TrainingMaxKg != 100 {
+		t.Fatalf("settings = %+v", ue)
+	}
+	if hist, _ := db.TrainingMaxHistory(ctx, alice.ID, "squat"); len(hist) != 1 {
+		t.Fatalf("history = %+v", hist)
+	}
+
+	// Without SetTrainingMax the TM is left alone.
+	if err := db.SaveExerciseSettings(ctx, alice.ID, "squat", ExerciseSettings{}); err != nil {
+		t.Fatal(err)
+	}
+	if ue, _ := db.UserExercise(ctx, alice.ID, "squat"); ue.EquipmentID != "" || *ue.TrainingMaxKg != 100 {
+		t.Fatalf("unlink only = %+v", ue)
+	}
+
+	// Another user's profile fails the whole save.
+	err = db.SaveExerciseSettings(ctx, bob.ID, "squat", ExerciseSettings{
+		EquipmentID: bar.ID, SetTrainingMax: true, TrainingMaxKg: kg(50), Source: "web"})
+	if !errors.Is(err, ErrNotFound) {
+		t.Fatalf("another user's equipment must be ErrNotFound, got %v", err)
+	}
+	if ue, _ := db.UserExercise(ctx, bob.ID, "squat"); ue.TrainingMaxKg != nil {
+		t.Fatalf("TM saved although the save failed: %+v", ue)
+	}
+}

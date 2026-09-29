@@ -87,6 +87,15 @@ func saveEquipment(ctx context.Context, tx *sql.Tx, e *Equipment) error {
 		}
 	}
 	if e.ID != "" {
+		// Exercises link only to a profile of their own kind, so a new kind
+		// unlinks the profile, as deleting it does (they fall back to the
+		// default profile for their kind).
+		if _, err := tx.ExecContext(ctx, `UPDATE user_exercise SET equipment_id = NULL
+			WHERE user_id = ? AND equipment_id = ?
+			  AND EXISTS (SELECT 1 FROM equipment WHERE id = ? AND user_id = ? AND kind != ?)`,
+			e.UserID, e.ID, e.ID, e.UserID, e.Spec.Kind); err != nil {
+			return err
+		}
 		res, err := tx.ExecContext(ctx, `UPDATE equipment SET name = ?, kind = ?, unit = ?, config = ?, is_default = ?
 			WHERE id = ? AND user_id = ?`,
 			e.Name, e.Spec.Kind, e.Spec.Unit, string(config), e.IsDefault, e.ID, e.UserID)

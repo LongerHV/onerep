@@ -277,6 +277,69 @@ func TestUnitSwitchReplacesUntouchedStarterEquipment(t *testing.T) {
 	}
 }
 
+// The settings form is validated as a whole: a rejected field saves nothing.
+// Only profiles of the exercise's kind are offered and accepted.
+func TestSettingsFormSavesAllOrNothing(t *testing.T) {
+	srv, c, db := newAppDB(t, "alice")
+	csrf := session(t, srv, c)
+	ctx := context.Background()
+	base := srv.URL + "/exercises/barbell-back-squat"
+	page := read(t, mustGet(t, c, base))
+
+	u, err := db.UpsertOIDCUser(ctx, auth.DevIssuer, "alice", "alice@localhost", "alice")
+	if err != nil {
+		t.Fatal(err)
+	}
+	bar, _ := db.DefaultEquipment(ctx, u.ID, calc.KindBarbell)
+	bells, _ := db.DefaultEquipment(ctx, u.ID, calc.KindDumbbell)
+	if !strings.Contains(page, `value="`+bar.ID+`"`) || strings.Contains(page, `value="`+bells.ID+`"`) {
+		t.Fatalf("the select must offer only barbell profiles:\n%s", page)
+	}
+
+	resp, body := post(t, c, base+"/settings", csrf, url.Values{"training_max": {"2000"}, "equipment_id": {bar.ID}})
+	if resp.StatusCode != http.StatusUnprocessableEntity || !strings.Contains(body, "up to 1,500 kg") {
+		t.Fatalf("TM over the limit: %d\n%s", resp.StatusCode, body)
+	}
+	if !strings.Contains(body, `value="`+bar.ID+`" selected`) {
+		t.Fatalf("the form must keep the chosen profile:\n%s", body)
+	}
+	if ue, _ := db.UserExercise(ctx, u.ID, "barbell-back-squat"); ue.EquipmentID != "" || ue.TrainingMaxKg != nil {
+		t.Fatalf("a rejected form saved: %+v", ue)
+	}
+
+	resp, body = post(t, c, base+"/settings", csrf, url.Values{"training_max": {"140"}, "equipment_id": {bells.ID}})
+	if resp.StatusCode != http.StatusUnprocessableEntity || !strings.Contains(body, "choose a barbell profile") {
+		t.Fatalf("dumbbells for a barbell exercise: %d\n%s", resp.StatusCode, body)
+	}
+	if ue, _ := db.UserExercise(ctx, u.ID, "barbell-back-squat"); ue.EquipmentID != "" || ue.TrainingMaxKg != nil {
+		t.Fatalf("a rejected form saved: %+v", ue)
+	}
+}
+
+// Deleting a custom exercise says what is kept; deleting one whose slug
+// belongs to a hidden seeded exercise goes back to the catalog.
+func TestDeleteCustomExerciseOverHiddenSeed(t *testing.T) {
+	srv, c, db := newAppDB(t, "alice")
+	csrf := session(t, srv, c)
+	if err := db.SyncSeed(context.Background(), nil, nil); err != nil { // hides every seeded exercise
+		t.Fatal(err)
+	}
+	form := url.Values{"name": {"My Squat"}, "slug": {"barbell-back-squat"}, "measurement": {"weight_reps"},
+		"equipment_kind": {"barbell"}, "primary_muscles": {"quads"}}
+	resp, body := post(t, c, srv.URL+"/exercises", csrf, form)
+	if resp.StatusCode != http.StatusSeeOther {
+		t.Fatalf("create over a hidden seed: %d\n%s", resp.StatusCode, body)
+	}
+	page := read(t, mustGet(t, c, srv.URL+"/exercises/barbell-back-squat"))
+	if strings.Contains(page, "Reset to default") || !strings.Contains(page, "training max") || !strings.Contains(page, "come back") {
+		t.Fatalf("delete button of a custom exercise:\n%s", page)
+	}
+	resp, _ = post(t, c, srv.URL+"/exercises/barbell-back-squat/delete", csrf, nil)
+	if resp.Header.Get("Location") != "/exercises" {
+		t.Fatalf("delete redirect: %s", resp.Header.Get("Location"))
+	}
+}
+
 // The settings form resubmits the displayed (rounded) TM; saving it unchanged
 // must not nudge the stored value or log a change.
 func TestResavingDisplayedTrainingMaxChangesNothing(t *testing.T) {

@@ -130,3 +130,34 @@ func TestInitStarterEquipmentOnlyOnce(t *testing.T) {
 		t.Fatal("user not marked initialized")
 	}
 }
+
+// A profile's links assume its kind, so changing the kind unlinks it, the same
+// way deleting it does.
+func TestChangingEquipmentKindUnlinksIt(t *testing.T) {
+	db := newTestDB(t)
+	ctx := context.Background()
+	u := newUser(t, db, "u")
+	bar, err := db.SaveEquipment(ctx, barbell(u.ID, "bar", false))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.SetExerciseEquipment(ctx, u.ID, "squat", bar.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	bar.Name = "renamed"
+	if _, err := db.SaveEquipment(ctx, bar); err != nil {
+		t.Fatal(err)
+	}
+	if ue, _ := db.UserExercise(ctx, u.ID, "squat"); ue.EquipmentID != bar.ID {
+		t.Fatalf("renaming must keep the link: %+v", ue)
+	}
+
+	bar.Spec = calc.Equipment{Kind: calc.KindDumbbell, Unit: calc.UnitKg, Config: calc.EquipmentConfig{Weights: []float64{10}}}
+	if _, err := db.SaveEquipment(ctx, bar); err != nil {
+		t.Fatal(err)
+	}
+	if ue, _ := db.UserExercise(ctx, u.ID, "squat"); ue.EquipmentID != "" {
+		t.Fatalf("changing the kind must unlink: %+v", ue)
+	}
+}

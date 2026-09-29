@@ -19,7 +19,13 @@ type Exercise struct {
 	SecondaryMuscles []string
 	Aliases          []string
 	Hidden           bool
-	// Overrides is true for a user row that shadows a global exercise.
+	// Original is true for a user row created as a new exercise rather than as
+	// a customized copy of a seeded one. SaveUserExercise stores it only when
+	// it creates the row.
+	Original bool
+	// Overrides is true for a customized copy of a visible global exercise:
+	// deleting it resets the exercise to the global version. A user row that
+	// is Original, or whose global row is hidden, is simply custom.
 	Overrides bool
 	CreatedAt time.Time
 	UpdatedAt time.Time
@@ -29,15 +35,16 @@ type Exercise struct {
 func (e Exercise) Custom() bool { return e.UserID != "" }
 
 const exerciseColumns = `e.id, coalesce(e.user_id, ''), e.slug, e.name, e.measurement, e.equipment_kind,
-	e.primary_muscles, e.secondary_muscles, e.aliases, e.hidden,
-	e.user_id IS NOT NULL AND EXISTS (SELECT 1 FROM exercises g WHERE g.user_id IS NULL AND g.slug = e.slug),
+	e.primary_muscles, e.secondary_muscles, e.aliases, e.hidden, e.original,
+	e.user_id IS NOT NULL AND e.original = 0 AND EXISTS (
+		SELECT 1 FROM exercises g WHERE g.user_id IS NULL AND g.slug = e.slug AND g.hidden = 0),
 	e.created_at, e.updated_at`
 
 func scanExercise(row interface{ Scan(...any) error }) (Exercise, error) {
 	var e Exercise
 	var primary, secondary, aliases, created, updated string
 	err := row.Scan(&e.ID, &e.UserID, &e.Slug, &e.Name, &e.Measurement, &e.EquipmentKind,
-		&primary, &secondary, &aliases, &e.Hidden, &e.Overrides, &created, &updated)
+		&primary, &secondary, &aliases, &e.Hidden, &e.Original, &e.Overrides, &created, &updated)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Exercise{}, ErrNotFound
 	}
@@ -95,6 +102,7 @@ func (db *DB) ExerciseBySlug(ctx context.Context, userID, slug string) (Exercise
 }
 
 // SaveUserExercise creates or replaces the user's own exercise with e.Slug.
+// e.Original is stored when the row is created and kept when it is replaced.
 func (db *DB) SaveUserExercise(ctx context.Context, userID string, e Exercise) (Exercise, error) {
 	id, err := newID()
 	if err != nil {
@@ -103,14 +111,14 @@ func (db *DB) SaveUserExercise(ctx context.Context, userID string, e Exercise) (
 	now := formatTime(time.Now())
 	_, err = db.write.ExecContext(ctx, `
 		INSERT INTO exercises (id, user_id, slug, name, measurement, equipment_kind,
-			primary_muscles, secondary_muscles, aliases, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			primary_muscles, secondary_muscles, aliases, original, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT (user_id, slug) WHERE user_id IS NOT NULL DO UPDATE SET
 			name = excluded.name, measurement = excluded.measurement, equipment_kind = excluded.equipment_kind,
 			primary_muscles = excluded.primary_muscles, secondary_muscles = excluded.secondary_muscles,
 			aliases = excluded.aliases, updated_at = excluded.updated_at`,
 		id, userID, e.Slug, e.Name, e.Measurement, e.EquipmentKind,
-		jsonList(e.PrimaryMuscles), jsonList(e.SecondaryMuscles), jsonList(e.Aliases), now, now)
+		jsonList(e.PrimaryMuscles), jsonList(e.SecondaryMuscles), jsonList(e.Aliases), e.Original, now, now)
 	if err != nil {
 		return Exercise{}, err
 	}

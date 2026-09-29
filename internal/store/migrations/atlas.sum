@@ -1,4 +1,4 @@
-h1:SnL+epzrQpbZKRU60WbHUAAYhiF2mJszFGbKb/rR7Cs=
+h1:OHPBCBOi/RqCUuluwqeS+e6ufCNs5m1VP+L8eEicxv0=
 20260923200502_init.up.sql h1:Oo/ok2hmJTSY2NY8fX1YQ5CCd0HPrmSBfd+sOZypbhI=
 20260924071337_catalog_equipment.up.sql h1:Gd9zp+P1Gol1L3oOYg3ZTm/ou1CAIxSXqV4dgK5ewnk=
 20260924092056_plans.up.sql h1:dPRGJlf2DJRY53/hh1dK6yZMBSwB67Za8yKtU2nsptQ=
@@ -7,4 +7,5 @@ h1:SnL+epzrQpbZKRU60WbHUAAYhiF2mJszFGbKb/rR7Cs=
 20260924122754_api_tokens.up.sql h1:yd3uOcrQqR9FODKxErStcJXp4cwQTfSLmYANKqW7vMA=
 20260929192557_sets_user_done_index.up.sql h1:k3LXkmx1Sj/KKCyiRTTbi2z8nlmCsXaA87IZyLw0sr4=
 20260929194819_session_notes_updated_at.up.sql h1:u5KVKC9yeOKeQuxBVlJESn2lbJkHVCYgoSySCHEmcio=
-20260929224951_plans_next_version.up.sql h1:8ifnS7RsJfVw19hcOzJjPDGRy7hsA58l03E1WVQOCTE=
+20260929224845_exercise_original.up.sql h1:FAPk3J3lH5yxmfQDOm+3rpT6jenK+Q6v2KiHYI0vpWo=
+20260929225304_plans_next_version.up.sql h1:CAKR5epvtkMl6Rm0SM3fIP4oWf6CTQsruRem4V0N0RE=

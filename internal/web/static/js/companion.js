@@ -28,21 +28,31 @@ function db() {
   return dbPromise;
 }
 
-async function tx(store, mode, fn) {
+// tx runs fn in one transaction over stores (a name or a list) and resolves
+// once it commits. It rejects if the transaction fails or aborts (e.g. the
+// storage quota is exceeded), so a caller never waits forever.
+async function tx(stores, mode, fn) {
   const d = await db();
   return new Promise((resolve, reject) => {
-    const t = d.transaction(store, mode);
-    const result = fn(t.objectStore(store));
+    const t = d.transaction(stores, mode);
+    const result = fn(t);
     t.oncomplete = () => resolve(result && "result" in result ? result.result : undefined);
     t.onerror = () => reject(t.error);
+    t.onabort = () => reject(t.error || new DOMException("transaction aborted", "AbortError"));
   });
 }
 
 const idb = {
-  get: (store, k) => tx(store, "readonly", (s) => s.get(k)),
-  all: (store) => tx(store, "readonly", (s) => s.getAll()),
-  put: (store, v) => tx(store, "readwrite", (s) => s.put(v)),
-  del: (store, k) => tx(store, "readwrite", (s) => s.delete(k)),
+  get: (store, k) => tx(store, "readonly", (t) => t.objectStore(store).get(k)),
+  all: (store) => tx(store, "readonly", (t) => t.objectStore(store).getAll()),
+  put: (store, v) => tx(store, "readwrite", (t) => t.objectStore(store).put(v)),
+  del: (store, k) => tx(store, "readwrite", (t) => t.objectStore(store).delete(k)),
+  // saveWithOp stores a session's state and queues its operation in one
+  // transaction, so a tab killed in between can't keep a set that never syncs.
+  saveWithOp: (state, op) => tx(["sessions", "outbox"], "readwrite", (t) => {
+    t.objectStore("sessions").put(state);
+    if (op) t.objectStore("outbox").put(op);
+  }),
 };
 
 // --- sync --------------------------------------------------------------------
@@ -175,6 +185,7 @@ class Companion {
     this.timer = null;
     this.wakeLock = null;
     this.audio = null;
+    this.writing = 0; // state writes in progress, see refreshSets
     this.onSync = () => this.renderSync();
   }
 
@@ -185,20 +196,62 @@ class Companion {
     await this.save();
     syncListeners.add(this.onSync);
     this.timer = setInterval(() => this.tick(), 250);
-    this.onVisible = () => document.visibilityState === "visible" && this.lockScreen();
+    this.onVisible = () => {
+      if (document.visibilityState !== "visible") return;
+      this.lockScreen();
+      this.sync();
+    };
     document.addEventListener("visibilitychange", this.onVisible);
     this.lockScreen();
     // Keep a copy of this page for offline reloads, however the user got here.
     window.caches?.open("pages").then((c) => c.add(location.pathname)).catch(() => {});
     this.render();
-    flush();
+    this.sync();
   }
 
   stop() {
     clearInterval(this.timer);
     syncListeners.delete(this.onSync);
     document.removeEventListener("visibilitychange", this.onVisible);
+    this.release();
+  }
+
+  // release lets the screen sleep and frees the audio device.
+  release() {
     this.wakeLock?.release().catch(() => {});
+    this.wakeLock = null;
+    this.audio?.close().catch(() => {});
+    this.audio = null;
+  }
+
+  // sync sends queued operations, then picks up changes made elsewhere.
+  async sync() {
+    await flush();
+    await this.refreshSets();
+  }
+
+  // refreshSets merges the server's current sets, dropping ones deleted in
+  // history or on another device. The page's bootstrap can't be trusted for
+  // that: it may be an offline or htmx-history copy from before the latest
+  // sets synced. It gives up if the state changes while it fetches (the next
+  // sync tries again), so a set logged meanwhile is never lost.
+  async refreshSets() {
+    if (!navigator.onLine || this.writing) return;
+    const seen = this.state;
+    try {
+      const before = core.pendingSetIds(await idb.all("outbox"));
+      const res = await fetch(`/api/sessions/${this.state.sessionId}/sets`, { credentials: "same-origin" });
+      if (!res.ok) return;
+      const { sets } = await res.json();
+      // Another tab may have synced its operations meanwhile: keep what was pending at either end.
+      const pending = new Set([...before, ...core.pendingSetIds(await idb.all("outbox"))]);
+      if (this.writing || this.state !== seen) return;
+      this.state = core.mergeServerSets(this.boot, this.state, sets, pending);
+    } catch (err) {
+      console.warn("could not refresh sets", err);
+      return;
+    }
+    await this.update(this.state);
   }
 
   async lockScreen() {
@@ -206,6 +259,8 @@ class Companion {
     try {
       this.wakeLock = await navigator.wakeLock.request("screen");
       this.wakeLock.addEventListener("release", () => (this.wakeLock = null));
+      // Finished or swapped away while the request was pending.
+      if (this.state.finished || !document.body.contains(this.root)) this.release();
     } catch {
       // Not allowed right now (e.g. page hidden); retried when visible again.
     }
@@ -218,8 +273,12 @@ class Companion {
   // apply stores a new state and queues its operation, then syncs.
   async apply({ state, op }) {
     this.state = state;
-    await this.save();
-    if (op) await idb.put("outbox", op);
+    this.writing++;
+    try {
+      await idb.saveWithOp(state, op);
+    } finally {
+      this.writing--;
+    }
     this.render();
     await refreshCounts();
     flush();
@@ -227,7 +286,12 @@ class Companion {
 
   async update(state) {
     this.state = state;
-    await this.save();
+    this.writing++;
+    try {
+      await this.save();
+    } finally {
+      this.writing--;
+    }
     this.render();
   }
 
@@ -274,15 +338,16 @@ class Companion {
     const b = this.boot;
     const s = this.state;
     const step = s.finished ? null : core.currentStep(b, s);
+    const pr = core.lastPR(b, s);
     this.root.replaceChildren(...[
       h("div", { class: "flex items-center justify-between" },
         h("h1", { class: "text-2xl font-semibold" }, b.session.name),
         h("span", { "data-sync": true, class: "text-sm" })),
       h("p", { "data-rest": true, class: "mt-2 text-3xl font-semibold tabular-nums", hidden: true }),
-      this.prBanner && h("p", {
+      pr && h("p", {
         "data-pr-banner": true, role: "status",
         class: "mt-3 rounded bg-amber-100 p-2 text-sm font-medium text-amber-900 dark:bg-amber-950 dark:text-amber-100",
-      }, this.prBanner),
+      }, `New PR: ${core.exerciseInfo(b, pr.slug).name} ${setText(pr, this.unit)}`),
       s.finished ? this.finishedView() : step ? this.stepView(step) : this.doneView(),
       h("div", { "data-failed": true }, this.failedView()),
       this.overview(),
@@ -333,10 +398,7 @@ class Companion {
       msg.textContent = problem;
       return;
     }
-    const res = core.logSet(this.boot, this.state, step, values);
-    const set = res.op.payload;
-    this.prBanner = core.isPR(this.boot, res.state, set) ? `New PR: ${core.exerciseInfo(this.boot, set.slug).name} ${setText(set, this.unit)}` : null;
-    this.apply(res);
+    this.apply(core.logSet(this.boot, this.state, step, values));
   }
 
   stepView(step) {
@@ -449,6 +511,7 @@ class Companion {
   }
 
   async finish() {
+    this.release();
     await this.apply(core.finish(this.state));
   }
 

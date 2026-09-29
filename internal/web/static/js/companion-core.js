@@ -56,9 +56,23 @@ export function newState(boot) {
 // state; the newer edit of each set wins. Sets in groups past the plan are
 // exercises added during the workout (on any device, or in history): they
 // are recorded in state.added so positions never collide.
-export function mergeServerSets(boot, state, serverSets) {
+//
+// pending, the ids of sets with operations still in the outbox, is given only
+// when serverSets is a fresh copy fetched after syncing: then a local set the
+// server doesn't have, with nothing pending, was deleted elsewhere (history,
+// another device) and is dropped. The page's own bootstrap may be an older
+// copy (offline cache, htmx history), so without pending nothing is dropped.
+export function mergeServerSets(boot, state, serverSets, pending = null) {
   const s = structuredClone(state);
   const planned = boot.snapshot.groups.length;
+  if (pending) {
+    const onServer = new Set(serverSets.map((x) => x.id));
+    for (const id of Object.keys(s.sets)) {
+      if (onServer.has(id) || pending.has(id)) continue;
+      delete s.sets[id];
+      for (const [k, v] of Object.entries(s.positions)) if (v === id) delete s.positions[k];
+    }
+  }
   for (const set of serverSets) {
     const local = s.sets[set.id];
     if (!(local && Date.parse(local.updated_at) >= Date.parse(set.updated_at))) {
@@ -378,4 +392,22 @@ export function isPR(boot, state, set) {
     if (earlier) best = best === null ? o.weight_kg : Math.max(best, o.weight_kg);
   }
   return best !== null && set.weight_kg > best;
+}
+
+// lastPR returns the most recently logged set if it is a PR, for the banner
+// under the header; null once it is edited below the record, deleted, followed
+// by another set, or the workout is finished.
+export function lastPR(boot, state) {
+  if (state.finished) return null;
+  let last = null;
+  for (const x of Object.values(state.sets)) {
+    if (x.deleted) continue;
+    if (!last || time(x) > time(last) || (time(x) === time(last) && x.id > last.id)) last = x;
+  }
+  return last && isPR(boot, state, last) ? last : null;
+}
+
+// pendingSetIds lists the sets with operations still in the outbox.
+export function pendingSetIds(outbox) {
+  return new Set(outbox.filter((o) => o.op === "upsert_set" || o.op === "delete_set").map((o) => o.payload.id));
 }
