@@ -109,6 +109,14 @@ func TestTrainingTools(t *testing.T) {
 	if msg := call(t, cs, "get_weekly_muscle_volume", map[string]any{"from": "2020-01-01", "to": "2026-01-01"}, nil); !strings.Contains(msg, "104") {
 		t.Fatalf("too long a range: %q", msg)
 	}
+	// Sunday to Sunday 104 weeks later spans 105 ISO weeks.
+	if msg := call(t, cs, "get_weekly_muscle_volume", map[string]any{"from": "2024-01-07", "to": "2026-01-04"}, nil); !strings.Contains(msg, "104") {
+		t.Fatalf("105 weeks: %q", msg)
+	}
+	call(t, cs, "get_weekly_muscle_volume", map[string]any{"from": "2024-01-08", "to": "2026-01-04"}, &vol)
+	if len(vol.Weeks) != 104 {
+		t.Fatalf("Monday to Sunday 104 weeks later: %d weeks, want 104", len(vol.Weeks))
+	}
 
 	prompts, err := cs.ListPrompts(context.Background(), nil)
 	if err != nil || len(prompts.Prompts) != 2 {
