@@ -83,28 +83,28 @@ templ EquipmentFormPage(p Page, f EquipmentForm) {
 					<label class={ label }>
 						Plates
 						<input type="text" name="plates" value={ f.Plates } class={ input }/>
-						<p class={ hint }>Sizes you have, like 25, 20, 15, 10, 5, 2.5, 1.25</p>
+						<p class={ hint }>Sizes you have, like 25, 20, 15, 10, 5, 2.5, 1.25. Separate values with a comma and a space, or a semicolon; 2,5 means 2.5.</p>
 						@fieldError(f.Errors, "plates")
 					</label>
 				</div>
 				<label class={ label }>
 					Limited plates (optional)
 					<input type="text" name="plate_pairs" value={ f.PlatePairs } class={ input }/>
-					<p class={ hint }>Size and number of pairs for sizes you have few of, like 1.25:1, 2.5:2</p>
+					<p class={ hint }>Size and number of pairs for sizes you have few of, like 1.25:1, 2.5:2 (separated like plates)</p>
 					@fieldError(f.Errors, "plate_pairs")
 				</label>
 			case calc.KindDumbbell:
 				<label class={ label }>
 					Dumbbell weights
 					<input type="text" name="weights" value={ f.Weights } class={ input }/>
-					<p class={ hint }>Comma-separated; ranges like 2-50/2 mean 2, 4, … 50.</p>
+					<p class={ hint }>Separate values with a comma and a space, or a semicolon; 2,5 means 2.5. Ranges like 2-50/2 mean 2, 4, … 50.</p>
 					@fieldError(f.Errors, "weights")
 				</label>
 			case calc.KindMachine, calc.KindCable:
 				<label class={ label }>
 					Weight stack
 					<input type="text" name="stack" value={ f.Stack } class={ input }/>
-					<p class={ hint }>Comma-separated; ranges like 5-100/5 mean 5, 10, … 100.</p>
+					<p class={ hint }>Separate values with a comma and a space, or a semicolon; 2,5 means 2.5. Ranges like 5-100/5 mean 5, 10, … 100.</p>
 					@fieldError(f.Errors, "stack")
 				</label>
 			default:

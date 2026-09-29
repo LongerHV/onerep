@@ -70,13 +70,16 @@ func (in Input) validate() FieldErrors {
 	if len(in.PrimaryMuscles) == 0 {
 		errs["primary_muscles"] = "choose at least one primary muscle"
 	}
-	for _, m := range append(slices.Clone(in.PrimaryMuscles), in.SecondaryMuscles...) {
+	for _, m := range in.PrimaryMuscles {
 		if !isMuscle(m) {
 			errs["primary_muscles"] = "unknown muscle " + m
 		}
 	}
 	for _, m := range in.SecondaryMuscles {
-		if slices.Contains(in.PrimaryMuscles, m) {
+		switch {
+		case !isMuscle(m):
+			errs["secondary_muscles"] = "unknown muscle " + m
+		case slices.Contains(in.PrimaryMuscles, m):
 			errs["secondary_muscles"] = m + " is already a primary muscle"
 		}
 	}
@@ -152,14 +155,21 @@ func (s *Service) Delete(ctx context.Context, userID, slug string) error {
 func normalize(in Input) Input {
 	in.Slug = strings.TrimSpace(in.Slug)
 	in.Name = strings.TrimSpace(in.Name)
-	var aliases []string
-	for _, a := range in.Aliases {
-		if a = strings.TrimSpace(a); a != "" && !slices.Contains(aliases, a) {
-			aliases = append(aliases, a)
+	in.PrimaryMuscles = dedupe(in.PrimaryMuscles)
+	in.SecondaryMuscles = dedupe(in.SecondaryMuscles)
+	in.Aliases = dedupe(in.Aliases)
+	return in
+}
+
+// dedupe trims the values and drops empty and repeated ones, keeping order.
+func dedupe(vs []string) []string {
+	var out []string
+	for _, v := range vs {
+		if v = strings.TrimSpace(v); v != "" && !slices.Contains(out, v) {
+			out = append(out, v)
 		}
 	}
-	in.Aliases = aliases
-	return in
+	return out
 }
 
 func toStore(in Input) store.Exercise {
@@ -257,7 +267,7 @@ const MaxTrainingMaxKg = 1500
 
 // SetTrainingMax sets (nil clears) the training max of slug.
 func (s *Service) SetTrainingMax(ctx context.Context, userID, slug string, kg *float64, source string) error {
-	if kg != nil && (*kg <= 0 || *kg > MaxTrainingMaxKg) {
+	if kg != nil && !(*kg > 0 && *kg <= MaxTrainingMaxKg) { // also rejects NaN
 		return FieldErrors{"training_max": "enter a positive weight"}
 	}
 	if _, err := s.Store.ExerciseBySlug(ctx, userID, slug); err != nil {

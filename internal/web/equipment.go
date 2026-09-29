@@ -4,8 +4,6 @@ import (
 	"errors"
 	"net/http"
 	"slices"
-	"strconv"
-	"strings"
 
 	"github.com/go-chi/chi/v5"
 
@@ -93,7 +91,7 @@ func equipmentFromForm(r *http.Request) (views.EquipmentForm, store.Equipment, e
 	c := &e.Spec.Config
 	switch f.Kind {
 	case calc.KindBarbell:
-		bar, err := strconv.ParseFloat(strings.TrimSpace(f.Bar), 64)
+		bar, err := exercise.ParseNumber(f.Bar)
 		if err != nil || bar < 0 {
 			errs["bar"] = "enter the bar weight"
 		}

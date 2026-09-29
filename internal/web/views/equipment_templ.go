@@ -698,7 +698,7 @@ func EquipmentFormPage(p Page, f EquipmentForm) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 64, "\">Sizes you have, like 25, 20, 15, 10, 5, 2.5, 1.25</p>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 64, "\">Sizes you have, like 25, 20, 15, 10, 5, 2.5, 1.25. Separate values with a comma and a space, or a semicolon; 2,5 means 2.5.</p>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -785,7 +785,7 @@ func EquipmentFormPage(p Page, f EquipmentForm) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 72, "\">Size and number of pairs for sizes you have few of, like 1.25:1, 2.5:2</p>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 72, "\">Size and number of pairs for sizes you have few of, like 1.25:1, 2.5:2 (separated like plates)</p>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -873,7 +873,7 @@ func EquipmentFormPage(p Page, f EquipmentForm) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 80, "\">Comma-separated; ranges like 2-50/2 mean 2, 4, … 50.</p>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 80, "\">Separate values with a comma and a space, or a semicolon; 2,5 means 2.5. Ranges like 2-50/2 mean 2, 4, … 50.</p>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -961,7 +961,7 @@ func EquipmentFormPage(p Page, f EquipmentForm) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 88, "\">Comma-separated; ranges like 5-100/5 mean 5, 10, … 100.</p>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 88, "\">Separate values with a comma and a space, or a semicolon; 2,5 means 2.5. Ranges like 5-100/5 mean 5, 10, … 100.</p>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}

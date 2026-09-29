@@ -3,6 +3,7 @@ package exercise
 import (
 	"context"
 	"errors"
+	"math"
 	"slices"
 	"testing"
 
@@ -84,6 +85,19 @@ func TestCreateAndCustomize(t *testing.T) {
 	overlap.SecondaryMuscles = []string{"quads"}
 	if _, err := s.Create(ctx, u.ID, overlap); !errors.As(err, &fe) || fe["secondary_muscles"] == "" {
 		t.Fatalf("overlapping muscles: got %v", err)
+	}
+
+	unknown := validInput("unknown-secondary")
+	unknown.SecondaryMuscles = []string{"wings"}
+	if _, err := s.Create(ctx, u.ID, unknown); !errors.As(err, &fe) || fe["secondary_muscles"] == "" || fe["primary_muscles"] != "" {
+		t.Fatalf("unknown secondary muscle should be reported under secondary_muscles: got %v", err)
+	}
+	dup := validInput("dup-muscles")
+	dup.PrimaryMuscles = []string{"quads", "glutes", "quads"}
+	dup.SecondaryMuscles = []string{"upper-back", "upper-back"}
+	got, err := s.Create(ctx, u.ID, dup)
+	if err != nil || !slices.Equal(got.PrimaryMuscles, []string{"quads", "glutes"}) || !slices.Equal(got.SecondaryMuscles, []string{"upper-back"}) {
+		t.Fatalf("duplicate muscles: %+v, %v", got, err)
 	}
 
 	// Updating a seeded exercise creates the user's customized copy.
@@ -224,6 +238,11 @@ func TestPercentOfTM(t *testing.T) {
 	var fe FieldErrors
 	if err := s.SetTrainingMax(ctx, u.ID, squat.Slug, ptr(-1), "web"); !errors.As(err, &fe) {
 		t.Fatalf("negative TM: %v", err)
+	}
+	for _, v := range []float64{math.NaN(), math.Inf(1)} {
+		if err := s.SetTrainingMax(ctx, u.ID, squat.Slug, ptr(v), "web"); !errors.As(err, &fe) {
+			t.Fatalf("TM %v: %v", v, err)
+		}
 	}
 	if err := s.SetTrainingMax(ctx, u.ID, squat.Slug, ptr(140), "web"); err != nil {
 		t.Fatal(err)

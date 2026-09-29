@@ -28,11 +28,8 @@ Known issues, deferred on purpose: each was found in a milestone's final review 
 
 ## Exercises and equipment
 
-- **`nan` is accepted as a number.** As a training max it silently clears the TM and logs a "none → none" change. As a calculator percentage it renders "NaN%". Fix: reject non-finite values when parsing the TM and pct, and in `SetTrainingMax`. (`internal/web/exercises.go`, `internal/exercise/service.go`)
 - **The exercise settings form isn't saved all at once.** The equipment link is saved even when the training max is rejected. The 1,500 kg limit says "enter a positive weight", which is misleading. (`internal/web/exercises.go`, `internal/exercise/service.go`)
 - **A custom slug that later collides with a new seeded slug** shows as "customized", picks up the seed's alternatives, and its Delete button becomes "Reset to default". (`internal/store/exercises.go`, `views/exercises.templ`)
-- **Decimal comma handling is inconsistent.** The training max accepts `142,5`, but the bar weight rejects `7,5`. In plate, weight and stack lists, `2,5` silently becomes the two values 2 and 5. (`internal/web/equipment.go`, `internal/exercise/weights.go`)
-- **Duplicate muscles are stored** from a crafted POST, and would double-count in the milestone 5 stats. An unknown secondary muscle is reported under `primary_muscles`. Fix: dedupe in `normalize`. (`internal/exercise/service.go`)
 - **Hidden seeded slugs are "taken" but invisible.** Create reports "already exists", and Update revives the slug as a user copy. (`internal/exercise/service.go`)
 - **Deleting a custom exercise keeps its settings.** The TM, equipment link, TM history and user alternatives remain, and come back if the slug is re-created. This may be intended (history is keyed by slug), but it's undocumented.
 - **Equipment links aren't checked against the exercise's kind** (a barbell exercise can link to a dumbbell profile), and changing a profile's kind keeps its links. (`internal/store/user_exercise.go`)

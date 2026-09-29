@@ -3,7 +3,6 @@ package web
 import (
 	"errors"
 	"net/http"
-	"strconv"
 	"strings"
 
 	"github.com/go-chi/chi/v5"
@@ -173,7 +172,7 @@ func (s *Server) exerciseSettings(w http.ResponseWriter, r *http.Request) {
 	var tm *float64
 	errs := map[string]string{}
 	if tmText != "" {
-		v, err := strconv.ParseFloat(strings.ReplaceAll(tmText, ",", "."), 64)
+		v, err := exercise.ParseNumber(tmText)
 		if err != nil {
 			errs["training_max"] = "enter a number, or leave empty for none"
 		} else {
@@ -215,7 +214,7 @@ func (s *Server) exerciseCalc(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	pctText := strings.TrimSpace(r.URL.Query().Get("pct"))
-	pct, err := strconv.ParseFloat(pctText, 64)
+	pct, err := exercise.ParseNumber(pctText)
 	if err != nil || pct <= 0 || pct > 150 {
 		render(w, r, http.StatusOK, views.CalcResultFragment(u.Unit, views.CalcResult{Error: "Enter a percentage between 0 and 150."}))
 		return

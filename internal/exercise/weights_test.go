@@ -76,3 +76,56 @@ func TestParseWeightsLimitsTotalValues(t *testing.T) {
 		t.Fatalf("got %v", err)
 	}
 }
+
+func TestParseNumber(t *testing.T) {
+	cases := map[string]float64{"142.5": 142.5, " 142,5 ": 142.5, "7,5": 7.5, "20": 20, "0": 0}
+	for in, want := range cases {
+		if got, err := ParseNumber(in); err != nil || got != want {
+			t.Errorf("ParseNumber(%q) = %v, %v; want %v", in, got, err, want)
+		}
+	}
+	for _, bad := range []string{"", "abc", "nan", "NaN", "inf", "-Inf", "+infinity", "1e400", "1,2,3"} {
+		if v, err := ParseNumber(bad); err == nil {
+			t.Errorf("ParseNumber(%q) = %v, want an error", bad, v)
+		}
+	}
+}
+
+func TestParseWeightsSeparatorsAndDecimalComma(t *testing.T) {
+	cases := map[string][]float64{
+		// A comma between two digits is a decimal comma.
+		"2,5":          {2.5},
+		"1,25, 2,5, 5": {1.25, 2.5, 5},
+		"1,25-5/1,25":  {1.25, 2.5, 3.75, 5},
+		// A comma followed by a space, or a semicolon, separates values.
+		"2, 5":         {2, 5},
+		"2;5":          {2, 5},
+		"1,25; 2,5;5":  {1.25, 2.5, 5},
+		"25,  20 ,15":  {15, 20, 25},
+		"2-10/2, 12,5": {2, 4, 6, 8, 10, 12.5},
+	}
+	for in, want := range cases {
+		got, err := ParseWeights(in)
+		if err != nil || !slices.Equal(got, want) {
+			t.Errorf("ParseWeights(%q) = %v, %v; want %v", in, got, err, want)
+		}
+	}
+	for _, bad := range []string{"nan", "inf", "2-nan/1", "1-inf/1", "2,5,10"} {
+		if got, err := ParseWeights(bad); err == nil {
+			t.Errorf("ParseWeights(%q) = %v, want an error", bad, got)
+		}
+	}
+	if _, err := ParseWeights("25,20,15"); err == nil || !strings.Contains(err.Error(), `"25,20,15"`) {
+		t.Errorf("an ambiguous item should be quoted as typed, got %v", err)
+	}
+}
+
+func TestPlatePairsDecimalComma(t *testing.T) {
+	got, err := ParsePlatePairs("1,25:2; 2,5:4")
+	if err != nil || !maps.Equal(got, map[string]int{"1.25": 2, "2.5": 4}) {
+		t.Fatalf("got %v, %v", got, err)
+	}
+	if _, err := ParsePlatePairs("nan:2"); err == nil {
+		t.Fatal("nan plate size should fail")
+	}
+}
