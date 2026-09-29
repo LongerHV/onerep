@@ -160,6 +160,10 @@ func (s *Server) healthz(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) logout(w http.ResponseWriter, r *http.Request) {
+	// Drop the offline copy of this user's data: the companion's IndexedDB
+	// (outbox included) and cached workout pages. companion.js also clears it
+	// on the signed-out page, for browsers that ignore this header.
+	w.Header().Set("Clear-Site-Data", `"cache", "storage"`)
 	if err := s.Sessions.End(w, r); err != nil {
 		slog.ErrorContext(r.Context(), "logout", "err", err)
 	}

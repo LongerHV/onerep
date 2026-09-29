@@ -248,3 +248,49 @@ test("PR compares done_at as times", () => {
   assert.equal(isPR(boot, state, local), true);
   assert.equal(isPR(boot, state, synced), false);
 });
+
+// --- offline data: owner and pruning ---
+
+import { offlineOwner, opsToSync, prunePlan } from "../static/js/companion-core.js";
+
+test("offline data belongs to one user; another user's is discarded", () => {
+  assert.equal(offlineOwner(null, "alice"), "adopt");
+  assert.equal(offlineOwner("alice", "alice"), "keep");
+  assert.equal(offlineOwner("alice", "bob"), "discard");
+  assert.equal(offlineOwner("alice", ""), "unknown"); // signed out or the offline page: nothing to compare
+});
+
+test("only the signed-in user's operations are synced", () => {
+  const outbox = [
+    { op_id: "2", user: "alice", op: "x" },
+    { op_id: "1", user: "bob", op: "x" },
+    { op_id: "3", op: "x" }, // queued before operations named their user
+  ];
+  assert.deepEqual(opsToSync(outbox, "alice").map((o) => o.op_id), ["2", "3"]);
+  assert.ok(opsToSync(outbox, "alice").every((o) => !("user" in o)), "user is not sent");
+  assert.deepEqual(opsToSync(outbox, ""), []);
+});
+
+test("prunePlan drops old synced sessions, their rejects and their pages, never queued work", () => {
+  const now = Date.parse("2026-09-30T12:00:00Z");
+  const day = 86_400_000;
+  const sess = (sessionId, finished, age) => ({ sessionId, finished, savedAt: now - age * day, sets: {} });
+  const sessions = [
+    sess("old-done", true, 20),
+    sess("new-done", true, 3),
+    sess("old-queued", true, 30),
+    sess("stale-open", false, 100),
+    sess("recent-open", false, 30),
+    sess("current", true, 60),
+    // Saved before savedAt existed: its last edit dates it.
+    { sessionId: "legacy", finished: true, sets: { a: { updated_at: "2026-09-01T00:00:00Z" } } },
+    { sessionId: "legacy-new", finished: true, sets: {}, notesAt: "2026-09-29T00:00:00Z" },
+  ];
+  const outbox = [{ op_id: "q", payload: { session_id: "old-queued" } }];
+  const failed = [{ op_id: "f1", payload: { session_id: "old-done" } }, { op_id: "f2", payload: { session_id: "new-done" } }];
+  const pages = ["/sessions/old-done/live", "/sessions/new-done/live", "/sessions/orphan/live", "/sessions/current/live", "/offline"];
+  const plan = prunePlan({ sessions, outbox, failed, pages, now, current: "current" });
+  assert.deepEqual(plan.sessions.sort(), ["legacy", "old-done", "stale-open"]);
+  assert.deepEqual(plan.failed, ["f1"]);
+  assert.deepEqual(plan.pages.sort(), ["/sessions/old-done/live", "/sessions/orphan/live"]);
+});

@@ -91,7 +91,8 @@ func (s *Server) apiSync(w http.ResponseWriter, r *http.Request) {
 // offline cache after the user signed in again.
 func apiCSRF(w http.ResponseWriter, r *http.Request) {
 	id, _ := auth.FromContext(r.Context())
-	writeJSON(w, http.StatusOK, map[string]string{"csrf": id.CSRFToken})
+	// user_id lets the companion refuse a token of another user's session.
+	writeJSON(w, http.StatusOK, map[string]string{"csrf": id.CSRFToken, "user_id": id.User.ID})
 }
 
 // serviceWorker serves /sw.js with its cache version set to a hash of the
