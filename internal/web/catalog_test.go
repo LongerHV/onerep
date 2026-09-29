@@ -134,9 +134,19 @@ func TestTrainingMaxAndCalculator(t *testing.T) {
 	}
 	post(t, c, srv.URL+"/exercises/barbell-back-squat/settings", csrf, url.Values{"training_max": {"140"}})
 
-	resp, body := post(t, c, srv.URL+"/exercises/barbell-back-squat/settings", csrf, url.Values{"training_max": {"heavy"}})
-	if resp.StatusCode != http.StatusUnprocessableEntity || !strings.Contains(body, "enter a number") {
-		t.Fatalf("bad TM: %d", resp.StatusCode)
+	for _, bad := range []string{"heavy", "nan", "Inf"} {
+		resp, body := post(t, c, srv.URL+"/exercises/barbell-back-squat/settings", csrf, url.Values{"training_max": {bad}})
+		if resp.StatusCode != http.StatusUnprocessableEntity || !strings.Contains(body, "enter a number") {
+			t.Fatalf("bad TM %q: %d", bad, resp.StatusCode)
+		}
+	}
+	for _, bad := range []string{"nan", "inf"} {
+		if frag := htmx(t, c, srv.URL+"/exercises/barbell-back-squat/calc?pct="+bad, "calc-result"); !strings.Contains(frag, "Enter a percentage") {
+			t.Fatalf("pct %q:\n%s", bad, frag)
+		}
+	}
+	if frag := htmx(t, c, srv.URL+"/exercises/barbell-back-squat/calc?pct=72,5", "calc-result"); !strings.Contains(frag, "72.5% of 140 kg") {
+		t.Fatalf("decimal comma pct:\n%s", frag)
 	}
 
 	// Switching to pounds shows the same TM converted; nothing is re-stored.
@@ -148,7 +158,7 @@ func TestTrainingMaxAndCalculator(t *testing.T) {
 	if !strings.Contains(page, `value="308.65"`) || !strings.Contains(page, "Training max (lb)") {
 		t.Fatalf("TM not shown in lb:\n%s", page)
 	}
-	resp, body = post(t, c, srv.URL+"/settings", csrf, url.Values{"unit": {"stone"}, "e1rm_window_days": {"30"}})
+	resp, body := post(t, c, srv.URL+"/settings", csrf, url.Values{"unit": {"stone"}, "e1rm_window_days": {"30"}})
 	if resp.StatusCode != http.StatusUnprocessableEntity || !strings.Contains(body, "unit must be") {
 		t.Fatalf("invalid settings: %d", resp.StatusCode)
 	}
@@ -199,8 +209,22 @@ func TestEquipmentPages(t *testing.T) {
 		t.Fatalf("new profile missing:\n%s", list)
 	}
 
+	// A comma between digits is a decimal comma, in single numbers and lists.
+	bar := url.Values{"kind": {"barbell"}, "name": {"Technique bar"}, "unit": {"kg"}, "bar": {"7,5"}, "plates": {"2,5; 1,25, 5"}}
+	resp, body := post(t, c, srv.URL+"/equipment", csrf, bar)
+	if resp.StatusCode != http.StatusSeeOther {
+		t.Fatalf("decimal comma bar: %d\n%s", resp.StatusCode, body)
+	}
+	if list := read(t, mustGet(t, c, srv.URL+"/equipment")); !strings.Contains(list, "7.5 kg bar, plates 1.25, 2.5, 5 kg") {
+		t.Fatalf("decimal comma profile missing:\n%s", list)
+	}
+	bar.Set("bar", "nan")
+	if resp, body := post(t, c, srv.URL+"/equipment", csrf, bar); resp.StatusCode != http.StatusUnprocessableEntity || !strings.Contains(body, "enter the bar weight") {
+		t.Fatalf("nan bar: %d", resp.StatusCode)
+	}
+
 	form.Set("weights", "2-20")
-	resp, body := post(t, c, srv.URL+"/equipment", csrf, form)
+	resp, body = post(t, c, srv.URL+"/equipment", csrf, form)
 	if resp.StatusCode != http.StatusUnprocessableEntity || !strings.Contains(body, "a range needs a step") {
 		t.Fatalf("bad weights: %d", resp.StatusCode)
 	}

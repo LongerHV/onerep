@@ -12,12 +12,38 @@ import (
 // maxParsedValues bounds how much a weight list may expand to.
 const maxParsedValues = 1000
 
-// ParseWeights parses a comma-separated weight list where "a-b/s" expands to
-// a, a+s, ... up to b. "2-10/2, 12.5" gives [2 4 6 8 10 12.5]. The result is
-// sorted and de-duplicated.
+// ParseNumber parses a finite number typed by a user. A comma is a decimal
+// separator: "142,5" is 142.5.
+func ParseNumber(s string) (float64, error) {
+	v, err := strconv.ParseFloat(strings.ReplaceAll(strings.TrimSpace(s), ",", "."), 64)
+	if err != nil || math.IsNaN(v) || math.IsInf(v, 0) {
+		return 0, fmt.Errorf("not a number: %q", s)
+	}
+	return v, nil
+}
+
+// splitList splits a list typed by a user. Items are separated by semicolons,
+// or by commas that don't sit between two digits: a comma between two digits
+// is a decimal comma, so "1,25, 2,5; 5" is 1,25 and 2,5 and 5.
+func splitList(s string) []string {
+	isDigit := func(i int) bool { return i >= 0 && i < len(s) && s[i] >= '0' && s[i] <= '9' }
+	var parts []string
+	start := 0
+	for i := 0; i < len(s); i++ {
+		if s[i] == ';' || s[i] == ',' && (!isDigit(i-1) || !isDigit(i+1)) {
+			parts = append(parts, s[start:i])
+			start = i + 1
+		}
+	}
+	return append(parts, s[start:])
+}
+
+// ParseWeights parses a weight list (separated as in splitList) where "a-b/s"
+// expands to a, a+s, ... up to b. "2-10/2, 12.5" gives [2 4 6 8 10 12.5]. The
+// result is sorted and de-duplicated.
 func ParseWeights(s string) ([]float64, error) {
 	var out []float64
-	for _, part := range strings.Split(s, ",") {
+	for _, part := range splitList(s) {
 		part = strings.TrimSpace(part)
 		if part == "" {
 			continue
@@ -68,8 +94,8 @@ func ParseWeights(s string) ([]float64, error) {
 }
 
 func parsePositive(s string) (float64, error) {
-	v, err := strconv.ParseFloat(strings.TrimSpace(s), 64)
-	if err != nil || v <= 0 || math.IsInf(v, 0) {
+	v, err := ParseNumber(s)
+	if err != nil || v <= 0 {
 		return 0, fmt.Errorf("not a positive number: %q", s)
 	}
 	return v, nil
@@ -104,10 +130,11 @@ func FormatNumber(v float64) string {
 	return strconv.FormatFloat(math.Round(v*100)/100, 'f', -1, 64)
 }
 
-// ParsePlatePairs parses "1.25:2, 2.5:4" (plate size: number of pairs).
+// ParsePlatePairs parses "1.25:2, 2.5:4" (plate size: number of pairs),
+// separated as in splitList.
 func ParsePlatePairs(s string) (map[string]int, error) {
 	out := map[string]int{}
-	for _, part := range strings.Split(s, ",") {
+	for _, part := range splitList(s) {
 		part = strings.TrimSpace(part)
 		if part == "" {
 			continue
