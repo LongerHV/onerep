@@ -55,6 +55,13 @@ test("absurd targets stay bounded", () => {
   const bar = { kind: "barbell", unit: "kg", config: { bar: 20, plates: [25, 1.25] } };
   assert.ok(near(round(1e9, bar, "kg").kg, 2020));
   assert.equal(round(NaN, null, "kg").kg, 0);
+  // JSON can't carry Infinity, so these mirror the "huge target" vectors.
+  assert.ok(near(round(Infinity, bar, "kg").kg, 2020));
+  assert.equal(round(Infinity, null, "kg").kg, 1e6);
+});
+
+test("e1rm of a NaN weight gives no result", () => {
+  assert.equal(e1rm(NaN, 5, 8), null);
 });
 
 test("many limited plate sizes stay fast", () => {

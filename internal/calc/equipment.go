@@ -120,6 +120,9 @@ func Round(targetKg float64, eq *Equipment, fallbackUnit string) Rounded {
 	if math.IsNaN(targetKg) || targetKg < 0 {
 		targetKg = 0
 	}
+	if targetKg > maxTargetKg {
+		targetKg = maxTargetKg
+	}
 	if eq == nil || eq.Kind == KindBodyweight {
 		unit := fallbackUnit
 		if eq != nil {
