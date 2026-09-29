@@ -3,18 +3,20 @@
 // into <main>, so charts are set up from htmx.onLoad, and uPlot (vendored) is
 // only fetched on a page that has one. Charts whose element left the page are
 // destroyed on the next swap. The tables next to each chart carry the numbers,
-// so a failed chart only logs.
+// so a failed chart only logs. Colours come from the colour scheme, so a
+// scheme change redraws every chart from the JSON it already fetched.
 
-import { e1rmData, muscleColor, stackMuscles } from "./chart-data.js";
+import { e1rmData, muscleColor, stackMuscles, weekAxis } from "./chart-data.js";
 
 let lib; // the uPlot module, loaded on first use
-const live = new Map(); // element → { plot, observer }
+const live = new Map(); // element → { plot, observer, build, json }
 // Charts are tracked by element, not a data attribute: Back restores a page
 // from htmx's history cache as new elements with the old markup (and an
 // empty canvas), and those must be drawn again.
 const started = new WeakSet();
 
-const dark = () => window.matchMedia("(prefers-color-scheme: dark)").matches;
+const scheme = window.matchMedia("(prefers-color-scheme: dark)");
+const dark = () => scheme.matches;
 const ink = () => (dark() ? "#a1a1aa" : "#52525b"); // zinc-400 / zinc-600
 const grid = () => (dark() ? "#27272a" : "#e4e4e7"); // zinc-800 / zinc-200
 const paper = () => (dark() ? "#09090b" : "#fafafa"); // zinc-950 / zinc-50
@@ -54,7 +56,7 @@ function musclesOptions(json, el) {
     data: stack.data,
     opts: {
       width: el.clientWidth, height: 288, legend: { live: false },
-      axes: axes({ values: (_, ticks) => ticks.map((i) => (json.weeks[i] || "").slice(5)), space: 30 }),
+      axes: axes(weekAxis(json.weeks)),
       scales: { x: { time: false, range: [-0.5, json.weeks.length - 0.5] }, y: { range: (_, __, max) => [0, Math.max(1, max)] } },
       series: [
         {},
@@ -69,6 +71,27 @@ function musclesOptions(json, el) {
 
 const builders = { e1rm: e1rmOptions, muscles: musclesOptions };
 
+// mount draws the chart into el, replacing the one already there. false when
+// there is nothing to draw.
+function mount(el, build, json) {
+  unmount(el);
+  const chart = build(json, el);
+  if (!chart) return false;
+  const plot = new lib(chart.opts, chart.data, el);
+  const observer = new ResizeObserver(() => plot.setSize({ width: el.clientWidth, height: chart.opts.height }));
+  observer.observe(el);
+  live.set(el, { plot, observer, build, json });
+  return true;
+}
+
+function unmount(el) {
+  const chart = live.get(el);
+  if (!chart) return;
+  chart.observer.disconnect();
+  chart.plot.destroy();
+  live.delete(el);
+}
+
 async function draw(el) {
   const build = builders[el.dataset.chart];
   if (!build || started.has(el)) return;
@@ -80,12 +103,7 @@ async function draw(el) {
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const json = await res.json();
     lib ??= (await import("/static/vendor/uplot/uPlot.esm.js")).default;
-    const chart = build(json, el);
-    if (!chart || !el.isConnected) return;
-    const plot = new lib(chart.opts, chart.data, el);
-    const observer = new ResizeObserver(() => plot.setSize({ width: el.clientWidth, height: chart.opts.height }));
-    observer.observe(el);
-    live.set(el, { plot, observer });
+    if (!el.isConnected || !mount(el, build, json)) return;
     el.dataset.drawn = "done";
   } catch (err) {
     console.error("chart unavailable", el.dataset.src, err);
@@ -94,13 +112,15 @@ async function draw(el) {
 }
 
 function sweep() {
-  for (const [el, { plot, observer }] of live) {
-    if (el.isConnected) continue;
-    observer.disconnect();
-    plot.destroy();
-    live.delete(el);
+  for (const el of [...live.keys()]) {
+    if (!el.isConnected) unmount(el);
   }
 }
+
+scheme.addEventListener("change", () => {
+  sweep();
+  for (const [el, { build, json }] of [...live]) mount(el, build, json);
+});
 
 htmx.onLoad((root) => {
   sweep();

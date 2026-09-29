@@ -28,6 +28,17 @@ export function stackMuscles(muscles) {
   };
 }
 
+// weekAxis is the muscles chart's x axis, whose values are week indexes
+// (stackMuscles' data[0]): ticks only on whole weeks, one, two or four apart,
+// labelled "W39".
+export function weekAxis(weeks) {
+  return {
+    incrs: [1, 2, 4],
+    space: 30,
+    values: (_, ticks) => ticks.map((i) => (weeks[i] || "").slice(5)),
+  };
+}
+
 // muscleColor spreads n colors around the hue wheel.
 export function muscleColor(i, n) {
   return `hsl(${Math.round((i * 360) / n)} 65% 55%)`;

@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { e1rmData, muscleColor, stackMuscles } from "../static/js/chart-data.js";
+import { e1rmData, muscleColor, stackMuscles, weekAxis } from "../static/js/chart-data.js";
 
 test("empty series draws no chart", () => {
   assert.equal(e1rmData([]), null);
@@ -29,6 +29,13 @@ test("muscles stack cumulatively, topmost series first", () => {
 
 test("no muscles, no chart", () => {
   assert.equal(stackMuscles([]), null);
+});
+
+test("the muscles x axis ticks whole weeks only, labelled by ISO week", () => {
+  const axis = weekAxis(["2026-W38", "2026-W39", "2026-W40"]);
+  // uPlot picks the smallest increment that fits; each is a whole number of weeks.
+  assert.deepEqual(axis.incrs, [1, 2, 4]);
+  assert.deepEqual(axis.values(null, [0, 2, 5]), ["W38", "W40", ""]);
 });
 
 test("muscle colors differ", () => {
