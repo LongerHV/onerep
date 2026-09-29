@@ -104,10 +104,16 @@ export function clean(doc) {
   return out;
 }
 
+// canonical sorts object keys, and only_weeks, which the form keeps sorted
+// and which means the same set of weeks in any order.
 function canonical(v) {
   if (Array.isArray(v)) return v.map(canonical);
   if (!isPlainObject(v)) return v;
-  return Object.fromEntries(Object.keys(v).sort().map((k) => [k, canonical(v[k])]));
+  return Object.fromEntries(Object.keys(v).sort().map((k) => {
+    const x = v[k];
+    if (k === "only_weeks" && Array.isArray(x) && x.every(Number.isInteger)) return [k, x.slice().sort((a, b) => a - b)];
+    return [k, canonical(x)];
+  }));
 }
 
 // PER_WEEK_KEYS are the keys whose values may be per-week arrays.

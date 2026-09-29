@@ -53,7 +53,6 @@ async function start(textarea) {
   await editor.promise;
 
   let view = "json";
-  let loading = false;
   const has = (p) => !!editor.getEditor(p);
   const isPerWeek = (p) => !!editor.getEditor(p)?.options?.perWeek;
 
@@ -63,8 +62,10 @@ async function start(textarea) {
   const flush = () => {
     if (view === "form") textarea.value = JSON.stringify(core.clean(editor.getValue()), null, 2);
   };
+  // json-editor reports a change a frame after setValue, so a document
+  // loadForm refuses is never written back: the view is still JSON by then.
   const writeBack = () => {
-    if (loading || view !== "form") return;
+    if (view !== "form") return;
     textarea.value = JSON.stringify(core.clean(editor.getValue()), null, 2);
     textarea.dispatchEvent(new Event("doc-changed", { bubbles: true }));
   };
@@ -72,12 +73,9 @@ async function start(textarea) {
   const loadForm = () => {
     let doc;
     try { doc = JSON.parse(textarea.value); } catch { return "The JSON doesn't parse, so it stays in the JSON view."; }
-    loading = true;
     editor.setValue(doc);
-    const back = core.clean(editor.getValue());
-    loading = false;
-    return core.sameDoc(doc, back, unit) ? null
-      : "The form can't show everything in this plan (for example keys it doesn't know), so it stays in the JSON view.";
+    return core.sameDoc(doc, core.clean(editor.getValue()), unit) ? null
+      : "Some values in this plan can't be shown in the form, so it stays in the JSON view.";
   };
   const show = (v, reason) => {
     view = v;

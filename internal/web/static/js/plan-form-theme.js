@@ -22,7 +22,8 @@ const cls = {
   control: "mb-2",
   weeks: "flex flex-wrap gap-1",
   weekInput: "w-16 rounded border border-zinc-300 bg-white px-1 py-1 text-sm text-zinc-900 min-h-10 sm:min-h-0 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100",
-  check: "inline-flex items-center gap-1 text-xs text-zinc-600 dark:text-zinc-400",
+  // At least a 40px tap area on phones.
+  check: "inline-flex min-h-10 min-w-10 items-center gap-1 text-xs text-zinc-600 sm:min-h-0 sm:min-w-0 dark:text-zinc-400",
 };
 // json-editor grid sizes 1-12; full width on phones.
 const cols = ["", "sm:w-1/12", "sm:w-2/12", "sm:w-3/12", "sm:w-4/12", "sm:w-5/12", "sm:w-6/12",
@@ -171,6 +172,7 @@ export function register(JSONEditor) {
       const toggle = add(document.createElement("label"), cls.check);
       this.varyBox = document.createElement("input");
       this.varyBox.type = "checkbox";
+      this.varyBox.setAttribute("aria-label", `Vary ${this.getTitle()} by week`);
       this.varyBox.addEventListener("change", () => {
         const first = this.state.values[0];
         this.state = this.varyBox.checked
@@ -250,6 +252,8 @@ export function register(JSONEditor) {
       this.control.dataset.weekSet = this.path;
       this.control.append(this.theme.getFormInputLabel(this.getTitle(), false));
       this.boxes = add(document.createElement("div"), cls.weeks);
+      this.boxes.setAttribute("role", "group");
+      this.boxes.setAttribute("aria-label", this.getTitle());
       this.errmsg = add(document.createElement("p"), cls.error);
       this.errmsg.hidden = true;
       this.control.append(this.boxes, this.errmsg);
