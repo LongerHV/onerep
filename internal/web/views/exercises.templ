@@ -132,7 +132,11 @@ templ ExerciseDetailPage(p Page, d ExerciseDetail) {
 								<td class="py-1">{ strconv.Itoa(row.Reps) }</td>
 								if row.Max != nil {
 									<td>{ Weight(row.Max.WeightKg, p.Identity.User.Unit) }</td>
-									<td><a href={ templ.URL("/history/" + row.Max.SessionID) } class="underline">{ row.Max.DoneAt.Format("2006-01-02") }</a></td>
+									<td>
+										<a href={ templ.URL("/history/" + row.Max.SessionID) } class="underline">
+											@LocalTime(row.Max.DoneAt, "date")
+										</a>
+									</td>
 								} else {
 									<td class="text-zinc-400">—</td>
 									<td></td>

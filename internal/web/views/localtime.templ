@@ -1,0 +1,27 @@
+package views
+
+import "time"
+
+// localLayouts are the Go layouts of the data-local styles that
+// static/js/local-time.js formats in the browser's timezone.
+var localLayouts = map[string]string{
+	"date":     "2006-01-02",
+	"datetime": "2006-01-02 15:04",
+	"weekday":  "Mon 2006-01-02 15:04",
+}
+
+// utcText is what LocalTime shows until the browser rewrites it.
+func utcText(t time.Time, style string) string {
+	s := t.UTC().Format(localLayouts[style])
+	if style != "date" {
+		s += " UTC"
+	}
+	return s
+}
+
+// LocalTime shows t in the viewer's timezone. The server only knows UTC, so it
+// renders UTC (marked as such when it has a time of day) and local-time.js
+// rewrites the text on htmx.onLoad; without JS the UTC text stays.
+templ LocalTime(t time.Time, style string) {
+	<time datetime={ t.UTC().Format(time.RFC3339) } data-local={ style }>{ utcText(t, style) }</time>
+}
