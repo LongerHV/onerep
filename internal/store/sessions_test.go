@@ -175,6 +175,10 @@ func TestSearchSessions(t *testing.T) {
 	ctx := context.Background()
 	u := newUser(t, db, "u")
 	a := newSession(t, db, u.ID, "a")
+	// Logged first and alphabetically first, but last in the session.
+	bench := set(a.ID, "s0", 80, t0.Add(-time.Minute))
+	bench.Slug, bench.GroupPos = "barbell-bench-press", 2
+	_, _ = db.UpsertSet(ctx, u.ID, bench, "")
 	_, _ = db.UpsertSet(ctx, u.ID, set(a.ID, "s1", 100, t0), "") // squat
 	curl := set(a.ID, "s2", 12, t0.Add(time.Minute))
 	curl.Slug, curl.GroupPos = "dumbbell-curl", 1
@@ -189,7 +193,8 @@ func TestSearchSessions(t *testing.T) {
 	if err != nil || len(all) != 2 || all[0].Name != "b" {
 		t.Fatalf("all = %+v, %v", all, err)
 	}
-	if got := all[1].Slugs; len(got) != 2 || got[0] != "barbell-back-squat" || got[1] != "dumbbell-curl" || all[1].Sets != 2 {
+	if got := all[1].Slugs; len(got) != 3 || got[0] != "barbell-back-squat" || got[1] != "dumbbell-curl" ||
+		got[2] != "barbell-bench-press" || all[1].Sets != 3 {
 		t.Fatalf("session a summary = %+v", all[1])
 	}
 	squat, _ := db.SearchSessions(ctx, u.ID, SessionFilter{Slug: "barbell-back-squat", Limit: 10})
