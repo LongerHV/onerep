@@ -7,12 +7,6 @@ Known issues, deferred on purpose: each was found in a milestone's final review 
 - **No favicon, app icons or web app manifest.** `/favicon.ico` is a 404, and installing onerep on a phone shows a generic icon and name. Fix: an icon set and a `manifest.webmanifest` (name, icons, `display: standalone`, theme colours) linked from the layout, both added to the service worker shell. (`views/layout.templ`, `static/`, `static/js/sw.js`)
 - **Static assets are unversioned and cached for an hour.** Users can see stale CSS and JS for up to an hour after an upgrade. Fix: content-hashed URLs, served as immutable. (`internal/web/static.go`)
 
-## Auth
-
-- **Two login tabs at once make each other fail** with "state mismatch", because they share one `onerep_oidc` flow cookie. Fix: name the cookie per state, or restart the login on a mismatch. (`internal/auth/oidc.go`)
-- **Login and logout errors are bare text pages** with no way back. An IdP `access_denied` or an expired session on logout shows plain text. Fix: render the error page with a "Sign in again" link. (`internal/auth/oidc.go`, `middleware.go`)
-- **Unused field `OIDC.issuer`.** (`internal/auth/oidc.go`)
-
 ## Exercises and equipment
 
 - **The exercise settings form isn't saved all at once.** The equipment link is saved even when the training max is rejected. The 1,500 kg limit says "enter a positive weight", which is misleading. (`internal/web/exercises.go`, `internal/exercise/service.go`)

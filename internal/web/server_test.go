@@ -31,6 +31,14 @@ func newApp(t *testing.T, devUser string) (*httptest.Server, *http.Client) {
 // newAppDB is newApp that also returns the database, with the catalog seeded.
 func newAppDB(t *testing.T, devUser string) (*httptest.Server, *http.Client, *store.DB) {
 	t.Helper()
+	s := newServer(t, devUser)
+	srv, client := serve(t, s)
+	return srv, client, s.DB
+}
+
+// newServer is the app's Server over a fresh database with the catalog seeded.
+func newServer(t *testing.T, devUser string) *Server {
+	t.Helper()
 	db := storetest.New(t)
 	if err := exercise.Seed(context.Background(), db); err != nil {
 		t.Fatal(err)
@@ -41,13 +49,19 @@ func newAppDB(t *testing.T, devUser string) (*httptest.Server, *http.Client, *st
 	s.Plans = &plan.Service{Store: db, Exercises: s.Exercises, History: db}
 	s.Training = &training.Service{Store: db, Plans: s.Plans, Exercises: s.Exercises}
 	s.Stats = &stats.Service{Store: db, Exercises: s.Exercises}
+	return s
+}
+
+// serve runs s's router and returns a client with a cookie jar that doesn't follow redirects.
+func serve(t *testing.T, s *Server) (*httptest.Server, *http.Client) {
+	t.Helper()
 	srv := httptest.NewServer(s.Routes())
 	t.Cleanup(srv.Close)
 	jar, _ := cookiejar.New(nil)
 	client := &http.Client{Jar: jar, CheckRedirect: func(*http.Request, []*http.Request) error {
 		return http.ErrUseLastResponse
 	}}
-	return srv, client, db
+	return srv, client
 }
 
 func read(t *testing.T, resp *http.Response) string {
