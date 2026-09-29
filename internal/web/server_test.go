@@ -172,13 +172,31 @@ func TestUserNameIsHTMLEscaped(t *testing.T) {
 func TestMCPIsMountedWithoutCookiesOrCSRF(t *testing.T) {
 	db := storetest.New(t)
 	called := false
-	s := &Server{DB: db, Sessions: &auth.Sessions{Store: db}, MCP: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	sessions := &auth.Sessions{Store: db}
+	s := &Server{DB: db, Sessions: sessions, MCP: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		called = true
 		w.WriteHeader(http.StatusTeapot)
 	})}
 	srv := httptest.NewServer(s.Routes())
 	defer srv.Close()
-	resp, err := http.Post(srv.URL+"/mcp", "application/json", strings.NewReader(`{}`))
+	// A browser's session cookie rides along, but without a CSRF token.
+	u, err := db.UpsertOIDCUser(context.Background(), "iss", "alice", "", "alice")
+	if err != nil {
+		t.Fatal(err)
+	}
+	rec := httptest.NewRecorder()
+	if _, err := sessions.Start(context.Background(), rec, u); err != nil {
+		t.Fatal(err)
+	}
+	req, _ := http.NewRequest(http.MethodPost, srv.URL+"/mcp", strings.NewReader(`{}`))
+	req.Header.Set("Content-Type", "application/json")
+	for _, ck := range rec.Result().Cookies() {
+		req.AddCookie(ck)
+	}
+	if len(req.Cookies()) == 0 {
+		t.Fatal("no session cookie")
+	}
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatal(err)
 	}
