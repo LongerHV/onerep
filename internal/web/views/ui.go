@@ -161,3 +161,21 @@ func RepMaxRows(maxes []store.RepMax) []RepMaxRow {
 func hasWeights(measurement string) bool {
 	return measurement == "weight_reps" || measurement == "bw_reps"
 }
+
+// cursorChange says what activating a version will do to the lifter's place
+// in the plan they follow.
+func cursorChange(m plan.CursorMove) string {
+	switch m.Kind {
+	case plan.CursorStaysComplete:
+		return "You finished this plan; it stays complete."
+	case plan.CursorPastEnd:
+		return "Week " + strconv.Itoa(m.FromWeek) + " doesn't exist in this version: the plan will count as complete."
+	case plan.CursorDayMissing:
+		missing := "Day " + strconv.Itoa(m.FromDay+1) + " of week " + strconv.Itoa(m.FromWeek) + " doesn't exist in this version: "
+		if m.Complete {
+			return missing + "it was the last day, so the plan will count as complete."
+		}
+		return missing + "you'll continue at week " + strconv.Itoa(m.Week) + ", day " + strconv.Itoa(m.Day+1) + "."
+	}
+	return ""
+}

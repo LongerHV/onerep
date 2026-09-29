@@ -206,8 +206,12 @@ func (s *Server) starterEquipment(next http.Handler) http.Handler {
 	})
 }
 
-// maxBodyBytes bounds request bodies; the largest legitimate one is a plan document.
-const maxBodyBytes = 1 << 20
+// maxBodyBytes bounds request bodies; the largest legitimate one is a plan
+// document. Its own limit (plan.MaxDocBytes) is checked by validation; encoded
+// as a form field (or a JSON string) it can grow up to three times, so the
+// body limit leaves room for that and only stops requests no valid document
+// could make.
+const maxBodyBytes = 3*plan.MaxDocBytes + 64<<10
 
 // limitBody refuses oversized requests before anything reads them. Form posts
 // are parsed here so the limit applies before the CSRF check reads the token.
@@ -217,7 +221,7 @@ func (s *Server) limitBody(next http.Handler) http.Handler {
 		if r.Method == http.MethodPost {
 			var tooLarge *http.MaxBytesError
 			if err := r.ParseForm(); errors.As(err, &tooLarge) {
-				s.renderError(w, r, http.StatusRequestEntityTooLarge, "The request is too large (at most 1 MB).")
+				s.renderError(w, r, http.StatusRequestEntityTooLarge, "The request is too large. A plan document can be at most 1 MB of JSON.")
 				return
 			}
 		}

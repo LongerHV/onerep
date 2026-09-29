@@ -81,9 +81,8 @@ type PlanVersionPage struct {
 
 // HomePage is the start page.
 type HomePage struct {
-	Next   *plan.Next
-	Open   *store.Session // a workout in progress
-	Notice string
+	Next *plan.Next
+	Open *store.Session // a workout in progress
 }
 
 // HistoryDetail is one session in the history editor.

@@ -4,9 +4,6 @@ import "strconv"
 
 templ Home(p Page, h HomePage) {
 	<h1 class={ h1 }>Hi, { p.Identity.User.Name }</h1>
-	if h.Notice != "" {
-		<p class="mt-4 rounded bg-amber-100 p-2 text-sm dark:bg-amber-950">{ h.Notice }</p>
-	}
 	if h.Open != nil {
 		<div class={ card + " mt-4" }>
 			<p class="font-medium">Workout in progress: { h.Open.Name }</p>

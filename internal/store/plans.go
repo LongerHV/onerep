@@ -126,28 +126,50 @@ func insertVersion(ctx context.Context, tx *sql.Tx, planID string, doc []byte, s
 		return PlanVersion{}, err
 	}
 	v := PlanVersion{ID: id, PlanID: planID, Doc: doc, Status: status, Source: source, Note: note, CreatedAt: time.Now().UTC()}
+	// plans.next_version keeps discarded drafts' numbers from coming back; it
+	// is 0 on plans from before the counter, which continue after their
+	// highest version.
 	err = tx.QueryRowContext(ctx, `INSERT INTO plan_versions (id, plan_id, version, doc, status, source, note, created_at)
-		VALUES (?, ?, (SELECT coalesce(max(version), 0) + 1 FROM plan_versions WHERE plan_id = ?), ?, ?, ?, ?, ?)
+		VALUES (?, ?, (SELECT max(p.next_version, coalesce((SELECT max(version) FROM plan_versions WHERE plan_id = p.id), 0) + 1)
+			FROM plans p WHERE p.id = ?), ?, ?, ?, ?, ?)
 		RETURNING version`,
 		v.ID, planID, planID, string(doc), status, source, note, formatTime(v.CreatedAt)).Scan(&v.Version)
+	if err != nil {
+		return PlanVersion{}, err
+	}
+	_, err = tx.ExecContext(ctx, `UPDATE plans SET next_version = ? WHERE id = ?`, v.Version+1, planID)
 	return v, err
 }
 
+// PlanListing is a plan as listed: its active version's number and how many
+// drafts it has, without any documents.
+type PlanListing struct {
+	Plan
+	ActiveVersion int // 0 when the plan has only drafts
+	Drafts        int
+}
+
 // ListPlans returns the user's plans, unarchived first, by name.
-func (db *DB) ListPlans(ctx context.Context, userID string) ([]Plan, error) {
-	rows, err := db.read.QueryContext(ctx, `SELECT `+planColumns+` FROM plans WHERE user_id = ?
-		ORDER BY archived, name COLLATE NOCASE`, userID)
+func (db *DB) ListPlans(ctx context.Context, userID string) ([]PlanListing, error) {
+	rows, err := db.read.QueryContext(ctx, `SELECT `+planColumns+`,
+			coalesce((SELECT version FROM plan_versions WHERE plan_id = plans.id AND status = 'active'), 0),
+			(SELECT count(*) FROM plan_versions WHERE plan_id = plans.id AND status = 'draft')
+		FROM plans WHERE user_id = ? ORDER BY archived, name COLLATE NOCASE`, userID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var out []Plan
+	var out []PlanListing
 	for rows.Next() {
-		p, err := scanPlan(rows)
-		if err != nil {
+		var l PlanListing
+		var created string
+		if err := rows.Scan(&l.ID, &l.UserID, &l.Name, &l.Archived, &created, &l.ActiveVersion, &l.Drafts); err != nil {
 			return nil, err
 		}
-		out = append(out, p)
+		if l.CreatedAt, err = parseTime(created); err != nil {
+			return nil, err
+		}
+		out = append(out, l)
 	}
 	return out, rows.Err()
 }

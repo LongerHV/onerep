@@ -28,7 +28,7 @@ func StarterTemplate() []byte { return starterTemplate }
 type Store interface {
 	CreatePlan(ctx context.Context, userID, name string, doc []byte, status, source, note string) (store.Plan, store.PlanVersion, error)
 	SavePlanVersion(ctx context.Context, userID, planID, name string, doc []byte, status, source, note string) (store.PlanVersion, error)
-	ListPlans(ctx context.Context, userID string) ([]store.Plan, error)
+	ListPlans(ctx context.Context, userID string) ([]store.PlanListing, error)
 	PlanByID(ctx context.Context, userID, id string) (store.Plan, error)
 	SetPlanArchived(ctx context.Context, userID, id string, archived bool) error
 	PlanVersions(ctx context.Context, userID, planID string) ([]store.PlanVersion, error)
@@ -67,7 +67,8 @@ var ErrNoActiveVersion = errors.New("the plan has no active version yet")
 // the user reviewed (the AI replaced the draft in the meantime).
 var ErrDocChanged = errors.New("the version changed since it was reviewed")
 
-// ErrArchived refuses new or changed versions of an archived plan.
+// ErrArchived refuses new or changed versions of an archived plan, and
+// following it.
 var ErrArchived = errors.New("the plan is archived; restore it first")
 
 // ErrVersionNotInPlan refuses a draft replacement whose plan id names another plan.
@@ -160,21 +161,29 @@ func (s *Service) Create(ctx context.Context, user store.User, raw []byte, statu
 }
 
 // Save stores raw as the next version of planID. Activating a new version of
-// the followed plan keeps the cursor when that day still exists (spec §8).
-func (s *Service) Save(ctx context.Context, user store.User, planID string, raw []byte, status, source, note string) (store.PlanVersion, bool, error) {
+// the followed plan fits the cursor into it (FitCursor, spec §8) and reports
+// how it moved.
+func (s *Service) Save(ctx context.Context, user store.User, planID string, raw []byte, status, source, note string) (store.PlanVersion, CursorMove, error) {
 	doc, ps := s.Validate(ctx, user, raw)
 	if ps.HasErrors() {
-		return store.PlanVersion{}, false, ps
+		return store.PlanVersion{}, CursorMove{}, ps
+	}
+	var before *followed
+	if status == SaveActivate {
+		var err error
+		if before, err = s.followedPlan(ctx, user, planID); err != nil {
+			return store.PlanVersion{}, CursorMove{}, err
+		}
 	}
 	if err := s.writable(ctx, user, planID); err != nil {
-		return store.PlanVersion{}, false, err
+		return store.PlanVersion{}, CursorMove{}, err
 	}
 	v, err := s.Store.SavePlanVersion(ctx, user.ID, planID, doc.Name, pinUnit(raw, doc, user.Unit), status, source, note)
 	if err != nil || status != SaveActivate {
-		return v, false, err
+		return v, CursorMove{}, err
 	}
-	reset, err := s.fitCursor(ctx, user, planID, doc)
-	return v, reset, err
+	m, err := s.fitCursor(ctx, user, before, doc)
+	return v, m, err
 }
 
 // writable checks that planID is the user's and takes new versions: an
@@ -234,33 +243,59 @@ func Decode(raw []byte) (Doc, error) {
 	return doc, err
 }
 
-// keepsCursor reports whether a cursor at (week, day) still makes sense in
-// doc: a training day, or the "complete" position just past the last week.
-func keepsCursor(doc Doc, week, day int) bool {
-	return ValidPosition(doc, week, day) || (week == doc.Weeks+1 && day == 0)
+// followed is the user's cursor in a plan and the length of the plan's
+// active version, read before a version change.
+type followed struct {
+	cursor   store.ActivePlan
+	oldWeeks int // 0 when the plan has no active version
 }
 
-// fitCursor resets the cursor of a followed plan whose day no longer exists.
-// It reports whether it reset.
-func (s *Service) fitCursor(ctx context.Context, user store.User, planID string, doc Doc) (bool, error) {
+// followedPlan returns the cursor if the user follows planID, else nil.
+func (s *Service) followedPlan(ctx context.Context, user store.User, planID string) (*followed, error) {
 	a, err := s.Store.ActivePlan(ctx, user.ID)
 	if errors.Is(err, store.ErrNotFound) || (err == nil && a.PlanID != planID) {
-		return false, nil
+		return nil, nil
 	}
 	if err != nil {
-		return false, err
+		return nil, err
 	}
-	if keepsCursor(doc, a.Week, a.Day) {
-		return false, nil
+	f := &followed{cursor: a}
+	v, err := s.Store.ActivePlanVersion(ctx, user.ID, planID)
+	if errors.Is(err, store.ErrNotFound) {
+		return f, nil
 	}
-	return true, s.Store.SetActivePlan(ctx, user.ID, store.ActivePlan{PlanID: planID, Week: 1, Day: 0})
+	if err != nil {
+		return nil, err
+	}
+	old, err := Decode(v.Doc)
+	if err != nil {
+		return nil, err
+	}
+	f.oldWeeks = old.Weeks
+	return f, nil
+}
+
+// move is where a version change to doc puts f's cursor (zero when f is nil).
+func (f *followed) move(doc Doc) CursorMove {
+	if f == nil {
+		return CursorMove{}
+	}
+	return FitCursor(f.oldWeeks, doc, f.cursor.Week, f.cursor.Day)
+}
+
+// fitCursor moves the cursor read before a version change into doc, the new
+// active version, and reports how it moved.
+func (s *Service) fitCursor(ctx context.Context, user store.User, before *followed, doc Doc) (CursorMove, error) {
+	m := before.move(doc)
+	if before == nil || !m.Moved() {
+		return m, nil
+	}
+	return m, s.Store.SetActivePlan(ctx, user.ID, store.ActivePlan{PlanID: before.cursor.PlanID, Week: m.Week, Day: m.Day})
 }
 
 // PlanSummary is a plan as listed.
 type PlanSummary struct {
-	store.Plan
-	Active    *store.PlanVersion // nil if the plan has only drafts
-	Drafts    int
+	store.PlanListing
 	Following bool
 }
 
@@ -269,28 +304,28 @@ func (s *Service) Plans(ctx context.Context, user store.User) ([]PlanSummary, er
 	if err != nil {
 		return nil, err
 	}
-	following, err := s.Store.ActivePlan(ctx, user.ID)
-	if err != nil && !errors.Is(err, store.ErrNotFound) {
+	following, err := s.Position(ctx, user)
+	if err != nil {
 		return nil, err
 	}
 	out := make([]PlanSummary, 0, len(plans))
 	for _, p := range plans {
-		versions, err := s.Store.PlanVersions(ctx, user.ID, p.ID)
-		if err != nil {
-			return nil, err
-		}
-		sum := PlanSummary{Plan: p, Following: following.PlanID == p.ID}
-		for i, v := range versions {
-			switch v.Status {
-			case store.PlanActive:
-				sum.Active = &versions[i]
-			case store.PlanDraft:
-				sum.Drafts++
-			}
-		}
-		out = append(out, sum)
+		out = append(out, PlanSummary{PlanListing: p, Following: following != nil && following.PlanID == p.ID})
 	}
 	return out, nil
+}
+
+// Position is the user's cursor in the plan they follow, or nil. Unlike Next
+// it resolves nothing, for pages that only need to know what is followed.
+func (s *Service) Position(ctx context.Context, user store.User) (*store.ActivePlan, error) {
+	a, err := s.Store.ActivePlan(ctx, user.ID)
+	if errors.Is(err, store.ErrNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &a, nil
 }
 
 // Plan returns a plan with its versions, newest first.
@@ -310,11 +345,19 @@ func (s *Service) Version(ctx context.Context, user store.User, versionID string
 
 // Activate makes a version active, provided its document still has docHash
 // (the DocHash of the document the user reviewed); otherwise it returns
-// ErrDocChanged. It reports whether the cursor of the followed plan had to
-// be reset because its day no longer exists.
-func (s *Service) Activate(ctx context.Context, user store.User, versionID, docHash string) (bool, error) {
+// ErrDocChanged. It fits the followed plan's cursor into the version
+// (FitCursor) and reports how it moved.
+func (s *Service) Activate(ctx context.Context, user store.User, versionID, docHash string) (CursorMove, error) {
+	v, err := s.Store.PlanVersionByID(ctx, user.ID, versionID)
+	if err != nil {
+		return CursorMove{}, err
+	}
+	before, err := s.followedPlan(ctx, user, v.PlanID)
+	if err != nil {
+		return CursorMove{}, err
+	}
 	var doc Doc
-	err := s.Store.ActivateVersion(ctx, user.ID, versionID, func(raw []byte) (string, error) {
+	err = s.Store.ActivateVersion(ctx, user.ID, versionID, func(raw []byte) (string, error) {
 		if DocHash(raw) != docHash {
 			return "", ErrDocChanged
 		}
@@ -323,13 +366,9 @@ func (s *Service) Activate(ctx context.Context, user store.User, versionID, docH
 		return doc.Name, err
 	})
 	if err != nil {
-		return false, err
+		return CursorMove{}, err
 	}
-	v, err := s.Store.PlanVersionByID(ctx, user.ID, versionID)
-	if err != nil {
-		return false, err
-	}
-	return s.fitCursor(ctx, user, v.PlanID, doc)
+	return s.fitCursor(ctx, user, before, doc)
 }
 
 // Discard deletes a draft.
@@ -337,12 +376,17 @@ func (s *Service) Discard(ctx context.Context, user store.User, versionID string
 	return s.Store.DeleteDraft(ctx, user.ID, versionID)
 }
 
-// Follow makes planID the user's plan, starting at week 1, day 1.
+// Follow makes planID the user's plan, starting at week 1, day 1. Archived
+// plans and plans with only drafts can't be followed.
 func (s *Service) Follow(ctx context.Context, user store.User, planID string) error {
+	p, err := s.Store.PlanByID(ctx, user.ID, planID)
+	if err != nil {
+		return err
+	}
+	if p.Archived {
+		return ErrArchived
+	}
 	if _, err := s.Store.ActivePlanVersion(ctx, user.ID, planID); errors.Is(err, store.ErrNotFound) {
-		if _, perr := s.Store.PlanByID(ctx, user.ID, planID); perr != nil {
-			return perr
-		}
 		return ErrNoActiveVersion
 	} else if err != nil {
 		return err
@@ -440,11 +484,15 @@ func (s *Service) Next(ctx context.Context, user store.User) (*Next, error) {
 		n.Complete = true
 		return n, nil
 	}
-	if n.Today, _ = s.Day(ctx, user, doc, a.Week, a.Day); n.Today.Name == "" {
-		// The stored position no longer exists; start the block over.
-		n.Week, n.Day = 1, 0
-		n.Today, _ = s.Day(ctx, user, doc, 1, 0)
+	// Version changes fit the cursor, so a missing position is unexpected;
+	// treat it the same way (the next existing day), never as a restart.
+	m := FitCursor(0, doc, a.Week, a.Day)
+	if m.Complete {
+		n.Complete = true
+		return n, nil
 	}
+	n.Week, n.Day = m.Week, m.Day
+	n.Today, _ = s.Day(ctx, user, doc, n.Week, n.Day)
 	return n, nil
 }
 
@@ -488,9 +536,9 @@ type Comparison struct {
 	Target store.PlanVersion
 	JSON   []DiffLine
 	Days   []DayChange // only days whose prescription changed
-	// ResetsCursor is true when activating Target would move the followed
-	// plan back to week 1, day 1.
-	ResetsCursor bool
+	// Cursor is what activating Target does to the followed plan's cursor;
+	// nil when the user doesn't follow this plan.
+	Cursor *CursorMove
 	// DocHash identifies the Target document shown; Activate takes it back.
 	DocHash string
 }
@@ -543,7 +591,10 @@ func (s *Service) Compare(ctx context.Context, user store.User, versionID string
 	}
 
 	if a, err := s.Store.ActivePlan(ctx, user.ID); err == nil && a.PlanID == target.PlanID {
-		cmp.ResetsCursor = !keepsCursor(targetDoc, a.Week, a.Day)
+		m := FitCursor(baseDoc.Weeks, targetDoc, a.Week, a.Day)
+		cmp.Cursor = &m
+	} else if err != nil && !errors.Is(err, store.ErrNotFound) {
+		return Comparison{}, err
 	}
 	return cmp, nil
 }
