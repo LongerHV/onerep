@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/go-chi/chi/v5/middleware"
 	"github.com/modelcontextprotocol/go-sdk/auth"
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -63,7 +64,10 @@ func (s *Server) verify(ctx context.Context, token string, _ *http.Request) (*au
 		return nil, auth.ErrInvalidToken
 	}
 	if err != nil {
-		return nil, err
+		// The SDK answers 500 with the error text, so don't hand it the raw error.
+		id := middleware.GetReqID(ctx)
+		slog.ErrorContext(ctx, "mcp token lookup failed", "err", err, "request_id", id)
+		return nil, fmt.Errorf("something went wrong (request %s)", id)
 	}
 	return &auth.TokenInfo{UserID: u.ID, Scopes: []string{"mcp"}}, nil
 }
@@ -118,7 +122,7 @@ func explain(ctx context.Context, tool string, err error) error {
 	case errors.Is(err, store.ErrNotDraft):
 		return errors.New("only draft versions can be changed; pass plan_id to add a new draft version instead")
 	default:
-		id := fmt.Sprintf("%d", time.Now().UnixNano())
+		id := middleware.GetReqID(ctx)
 		slog.ErrorContext(ctx, "mcp tool failed", "tool", tool, "err", err, "request_id", id)
 		return fmt.Errorf("something went wrong (request %s)", id)
 	}

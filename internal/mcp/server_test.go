@@ -1,13 +1,19 @@
 package mcp
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
+	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"regexp"
 	"strings"
 	"testing"
 
+	"github.com/go-chi/chi/v5/middleware"
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/LongerHV/onerep/internal/auth"
@@ -216,5 +222,59 @@ func TestMCPBehindLocalProxy(t *testing.T) {
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("proxied request = %d, want 200", resp.StatusCode)
+	}
+}
+
+type failingTokens struct{}
+
+func (failingTokens) Verify(context.Context, string) (store.User, error) {
+	return store.User{}, errors.New("disk I/O error in /var/lib/onerep/secret.db")
+}
+
+// captureLog sends slog output to a buffer for the rest of the test.
+func captureLog(t *testing.T) *bytes.Buffer {
+	t.Helper()
+	var buf bytes.Buffer
+	prev := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, nil)))
+	t.Cleanup(func() { slog.SetDefault(prev) })
+	return &buf
+}
+
+// A token lookup failure is logged with the request id and answered with a
+// generic message, never the raw error.
+func TestTokenLookupErrorsAreLoggedNotLeaked(t *testing.T) {
+	logs := captureLog(t)
+	s := &Server{Tokens: failingTokens{}}
+	srv := httptest.NewServer(middleware.RequestID(s.Handler()))
+	defer srv.Close()
+	req, _ := http.NewRequest(http.MethodPost, srv.URL, strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/list"}`))
+	req.Header.Set("Authorization", "Bearer onerep_abc")
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusInternalServerError || strings.Contains(string(body), "secret.db") {
+		t.Fatalf("token lookup failure = %d %q, want 500 without the error text", resp.StatusCode, body)
+	}
+	id := regexp.MustCompile(`request (\S+?)\)`).FindStringSubmatch(string(body))
+	if id == nil || !strings.Contains(logs.String(), "secret.db") || !strings.Contains(logs.String(), id[1]) {
+		t.Fatalf("body %q; want its request id logged with the error, log:\n%s", body, logs)
+	}
+}
+
+// Tool errors carry the request id of the request log (spec §16).
+func TestToolErrorsUseTheRequestID(t *testing.T) {
+	logs := captureLog(t)
+	ctx := context.WithValue(context.Background(), middleware.RequestIDKey, "host/abc-000042")
+	err := explain(ctx, "get_plan", errors.New("database is locked"))
+	if !strings.Contains(err.Error(), "host/abc-000042") || strings.Contains(err.Error(), "locked") {
+		t.Fatalf("tool error = %q, want the request id and no raw error", err)
+	}
+	if !strings.Contains(logs.String(), "host/abc-000042") {
+		t.Fatalf("log lacks the request id:\n%s", logs)
 	}
 }
