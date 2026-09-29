@@ -43,7 +43,7 @@ type BootExercise struct {
 	Equipment     *calc.Equipment `json:"equipment,omitempty"`
 	Alternatives  []string        `json:"alternatives"`
 	Last          []SetInput      `json:"last"` // sets from the previous session with this exercise
-	PRs           map[int]float64 `json:"prs"`  // best kg per rep count in other sessions, for the advisory PR badge
+	PRs           map[int]float64 `json:"prs"`  // best kg per rep count before this session started, for the advisory PR badge
 }
 
 // CatalogEntry is a catalog exercise the user can add or swap to.
