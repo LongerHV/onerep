@@ -32,9 +32,6 @@ Known issues, deferred on purpose: each was found in a milestone's final review 
 ## Training and companion mode
 
 - **Notes from a slow phone clock are dropped.** `SetSessionNotes` compares the client's `updated_at` with `sessions.updated_at`, which is stamped by the server at start. A phone that is behind by more than the time since the start gets its notes Ignored but reported as applied. Fix: compare only against earlier notes edits. (`internal/store/sessions.go`)
-- **Server-side deletes don't reach an open companion.** A set deleted in history or on another device stays "done" locally. Fix: in `mergeServerSets`, drop synced local sets that are absent from the server and not in the outbox. (`companion-core.js`)
-- **Local state and the outbox are written in separate IndexedDB transactions.** A tab killed between them keeps a set locally that never syncs, and `tx()` has no `onabort`, so a quota abort hangs. Fix: one readwrite transaction over both stores, and reject on abort. (`companion.js`)
-- **Wake lock and audio aren't released on finish.** The screen stays on after "Finish" until you navigate away, and each companion's `AudioContext` is never closed. (`companion.js`)
 - **Logout doesn't clear offline data.** The outbox, IndexedDB state and cached live pages survive logout. On a shared browser, the next user's session flushes the previous user's queue, which is rejected, and the cached pages still show the old workout. (`companion.js`, `sw.js`)
 - **Nothing is pruned:** the PAGES cache, IndexedDB `sessions` and `applied_ops` grow without bound (slowly).
 - **History times are in server time.** `.Local()` in `views/history.templ` is UTC in the container.
@@ -44,7 +41,6 @@ Known issues, deferred on purpose: each was found in a milestone's final review 
 ## Stats
 
 - **The companion's PR table can include later sets.** `RepMaxes(…, excludeSessionID)` takes other sessions' bests regardless of time, so resuming an older workout after a newer one was logged can hide an advisory badge. Fix: bound it by the session's `started_at`. (`internal/training/bootstrap.go`)
-- **The PR banner goes stale.** "New PR: …" stays after that set is edited below the record, deleted, or the workout is finished, until the next set is logged. Fix: recompute it in `render()` from the last logged set. (`companion.js`)
 - **"No working sets logged yet" is keyed on the 1–12 rep table,** so someone who only logged sets above 12 reps sees it. A `bw_reps` set saved from the history form with an empty weight stores NULL, where the companion stores 0, so it drops out of PRs. (`views/exercises.templ`, `internal/web/history.go`)
 
 ## MCP

@@ -195,6 +195,20 @@ try {
   await waitFor(async () => (await adhocSets()) === 3, "curl set 3 on the server").catch(() => {});
   check("history agrees it is a PR", await evaluate(`fetch("/history/${adhocID}").then(r => r.text()).then(t => (t.match(/data-pr-badge/g) || []).length === 1)`));
   check("the workout screen shows no stray null or false", await evaluate(`!/null|false/.test(document.querySelector('#companion').textContent.replace(/Add exercise…[\s\S]*/, ""))`));
+
+  // Delete the PR set in history (as from another tab or device): the open
+  // workout screen drops it when it next syncs, and so does the PR banner.
+  const prSetID = await evaluate(`fetch("/history/${adhocID}").then(r => r.text()).then(t => {
+    const doc = new DOMParser().parseFromString(t, "text/html");
+    const f = [...doc.querySelectorAll("form")].find(f => f.querySelector('input[name=set_id]') && f.querySelector('input[name=weight]')?.value === "14");
+    return f && f.querySelector('input[name=set_id]').value;
+  })`);
+  const deleted = await form(`/history/${adhocID}/sets/${prSetID}/delete`, {});
+  check("the PR set is deleted in history", !!prSetID && (await adhocSets()) === 2, `set ${prSetID}, ${deleted}`);
+  await evaluate(`document.dispatchEvent(new Event("visibilitychange"))`);
+  await waitFor(async () => (await done()) === 2, "the deleted set to disappear").catch(() => {});
+  check("a set deleted elsewhere disappears from the workout screen", (await done()) === 2, `${await done()} sets shown`);
+  check("the PR banner goes with it", await evaluate(`!document.querySelector('#companion [data-pr-banner]') && !document.querySelector('#companion [data-pr-badge]')`));
 } catch (err) {
   check("scenario ran to the end", false, err.stack || String(err));
 } finally {
