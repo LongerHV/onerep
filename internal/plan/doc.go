@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 )
@@ -103,6 +104,49 @@ func (p PerWeek[T]) MarshalJSON() ([]byte, error) {
 		return json.Marshal(p.Values)
 	}
 	return json.Marshal(p.Values[0])
+}
+
+// wholeNumbersAsInts rewrites numbers written as whole floats (5.0, 3e0) as
+// plain integers. JSON Schema counts them as integers, but encoding/json
+// refuses them for int fields. Other numbers are kept as written.
+func wholeNumbersAsInts(raw []byte) ([]byte, error) {
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	dec.UseNumber()
+	var v any
+	if err := dec.Decode(&v); err != nil {
+		return nil, err
+	}
+	changed := false
+	var walk func(v any) any
+	walk = func(v any) any {
+		switch v := v.(type) {
+		case json.Number:
+			s := string(v)
+			if !strings.ContainsAny(s, ".eE") {
+				return v
+			}
+			f, err := strconv.ParseFloat(s, 64)
+			if err != nil || f != math.Trunc(f) || math.Abs(f) > 1<<53 {
+				return v
+			}
+			changed = true
+			return json.Number(strconv.FormatInt(int64(f), 10))
+		case map[string]any:
+			for k, c := range v {
+				v[k] = walk(c)
+			}
+		case []any:
+			for i, c := range v {
+				v[i] = walk(c)
+			}
+		}
+		return v
+	}
+	v = walk(v)
+	if !changed {
+		return raw, nil
+	}
+	return json.Marshal(v)
 }
 
 // Reps is a rep target: a number, a range "lo-hi", or AMRAP.

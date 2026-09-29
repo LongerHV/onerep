@@ -40,9 +40,6 @@ Known issues, deferred on purpose: each was found in a milestone's final review 
 ## Plans
 
 - **A completed plan restarts when a shorter version is activated.** The comparison page warns first; whether "complete" should be preserved is undecided. (`internal/plan/service.go`, keepsCursor)
-- **Whole numbers written as floats** (`"weeks": 1.0`, `"reps": 5.0`, `3e0`) pass the schema, then fail with Go decode messages. Fix: accept integral floats when decoding, or reject them in the schema with a friendly message. (`internal/plan/doc.go`, `validate.go`)
-- **`duration_s: 0` is allowed** and shows as "3 × 0". Fix: a separate duration definition with `minimum: 1`. (`internal/plan/plan.schema.json`)
-- **Some messages still use library wording** (reps and slug patterns, `multipleOf`, `maxProperties`). Fix: extend `friendlier` in `internal/plan/validate.go`.
 - **The "1 MB" document limit is really about 400–650 KB of JSON** once form-encoded, so the message misleads. (`internal/web/server.go`, limitBody)
 - **Discarding the newest draft reuses its version number,** which makes notes or AI conversations that mention "v3" ambiguous. Fix: a `next_version` counter on `plans`. (`internal/store/plans.go`)
 - **Extra queries.** `planDetail` calls `Plans.Next`, which resolves a whole day, just to know `Following`. `Service.Plans` loads every version document of every plan. (`internal/web/plans.go`, `internal/plan/service.go`)

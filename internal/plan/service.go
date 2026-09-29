@@ -191,7 +191,11 @@ func Pretty(raw []byte) string {
 // Decode parses a stored (already validated) document.
 func Decode(raw []byte) (Doc, error) {
 	var doc Doc
-	err := json.Unmarshal(raw, &doc)
+	raw, err := wholeNumbersAsInts(raw)
+	if err != nil {
+		return doc, err
+	}
+	err = json.Unmarshal(raw, &doc)
 	return doc, err
 }
 
