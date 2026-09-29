@@ -88,12 +88,22 @@ export function setup(name) {
   }
 
   // finish closes the browser and the server, removes the temp dir, prints
-  // the summary and exits with the result.
+  // the summary and exits with the result. Chromium can still be writing its
+  // profile until it has exited (and its helpers a moment longer), so the
+  // removal waits for the exit and retries.
   async function finish(b) {
     b?.ws.close();
-    b?.proc.kill("SIGKILL");
+    if (b?.proc && b.proc.exitCode === null && b.proc.signalCode === null) {
+      const exited = new Promise((r) => b.proc.once("exit", r));
+      b.proc.kill("SIGKILL");
+      await Promise.race([exited, sleep(5_000)]);
+    }
     if (server && server.exitCode === null) await stopServer().catch(() => {});
-    rmSync(dir, { recursive: true, force: true });
+    try {
+      rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+    } catch (err) {
+      console.warn(`could not remove ${dir}: ${err.message}`);
+    }
     const failed = results.filter((r) => !r.ok).length;
     console.log(`\n${results.length - failed}/${results.length} checks passed`);
     process.exit(failed ? 1 : 0);
