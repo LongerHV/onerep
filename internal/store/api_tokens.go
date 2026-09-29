@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"log/slog"
 	"time"
 )
 
@@ -93,8 +94,9 @@ func (db *DB) UserByAPIToken(ctx context.Context, hash string, now time.Time) (U
 		return User{}, err
 	}
 	if last == nil || now.Sub(*last) >= time.Minute {
+		// Best effort: a failed write (e.g. SQLITE_BUSY) doesn't refuse the token.
 		if _, err := db.write.ExecContext(ctx, `UPDATE api_tokens SET last_used_at = ? WHERE id = ?`, formatTime(now), tokenID); err != nil {
-			return User{}, err
+			slog.WarnContext(ctx, "recording API token use", "token_id", tokenID, "err", err)
 		}
 	}
 	return u, nil

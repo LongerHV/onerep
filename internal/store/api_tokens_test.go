@@ -63,3 +63,19 @@ func TestAPITokens(t *testing.T) {
 		t.Fatalf("bob sees %d tokens", len(other))
 	}
 }
+
+// Recording last_used_at is best effort: a failed write (e.g. SQLITE_BUSY)
+// must not refuse the token.
+func TestUserByAPITokenIgnoresAFailedLastUsedWrite(t *testing.T) {
+	db := newTestDB(t)
+	ctx := context.Background()
+	alice := newUser(t, db, "alice")
+	if _, err := db.CreateAPIToken(ctx, alice.ID, "laptop", "hash-1", t0); err != nil {
+		t.Fatal(err)
+	}
+	_ = db.write.Close()
+	u, err := db.UserByAPIToken(ctx, "hash-1", t0.Add(time.Hour))
+	if err != nil || u.ID != alice.ID {
+		t.Fatalf("user by token with a failing write = %+v, %v", u, err)
+	}
+}
