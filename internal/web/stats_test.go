@@ -147,6 +147,22 @@ func TestExercisePageShowsProgress(t *testing.T) {
 	}
 }
 
+// Sets above the 12-rep table are still working sets: the page must not say
+// there are none.
+func TestExercisePageWithOnlyHighRepSets(t *testing.T) {
+	srv, c, db := newAppDB(t, "alice")
+	u := devUser(t, srv.URL, c, db)
+	sess := newSessionFor(t, db, u.ID)
+	logSet(t, db, u.ID, sess.ID, "00000000-0000-7000-8000-000000000031", "barbell-bench-press", 40, 15, nil, ptr(60), time.Now())
+	html := read(t, mustGet(t, c, srv.URL+"/exercises/barbell-bench-press"))
+	if strings.Contains(html, "No working sets logged yet.") || !strings.Contains(html, `data-chart="e1rm"`) {
+		t.Error("an exercise with only 15-rep sets should show its chart, not say nothing was logged")
+	}
+	if !strings.Contains(html, "No sets of 1–12 reps yet.") || strings.Contains(html, "data-rep-max") {
+		t.Error("an empty rep-max table should be replaced by a hint")
+	}
+}
+
 func TestExercisePageWithoutHistory(t *testing.T) {
 	srv, c := newApp(t, "alice")
 	html := read(t, mustGet(t, c, srv.URL+"/exercises/barbell-bench-press"))

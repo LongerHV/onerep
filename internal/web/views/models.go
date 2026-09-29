@@ -89,7 +89,7 @@ type HomePage struct {
 // HistoryDetail is one session in the history editor.
 type HistoryDetail struct {
 	Session      store.Session
-	Groups       []HistoryGroup // consecutive sets of one exercise
+	Groups       []HistoryGroup // one per exercise, in the order first done
 	Exercises    map[string]store.Exercise
 	Catalog      []store.Exercise // for adding a set
 	NextGroupPos int
@@ -97,11 +97,10 @@ type HistoryDetail struct {
 	Error        string
 }
 
-// HistoryGroup is a run of sets of one exercise within a session.
+// HistoryGroup is the sets of one exercise within a session.
 type HistoryGroup struct {
-	Slug     string
-	GroupPos int
-	Sets     []store.Set
+	Slug string
+	Sets []store.Set
 }
 
 // TokensData is the API tokens page. Secret is set only right after creation.

@@ -147,12 +147,19 @@ export function register(JSONEditor) {
       this.value = value;
       if (changed) { this.is_dirty = true; this.onChange(true); }
     }
+    // showValidationErrors receives the server's problems (json-editor's own
+    // validation is off, so its change pass sends none, and plan-form.js
+    // re-applies the last ones right after).
     showValidationErrors(errors) {
-      const msgs = errors.filter((e) => e.path === this.path && e.property === "onerep").map((e) => e.message);
-      const warning = msgs.length > 0 && msgs.every((m) => m.startsWith("Warning: "));
+      this.serverMsgs = errors.filter((e) => e.path === this.path && e.property === "onerep").map((e) => e.message);
+      this.showMessage();
+    }
+    draftMessages() { return []; }
+    showMessage() {
+      const { text, warning } = core.fieldMessage(this.draftMessages(), this.serverMsgs || []);
       this.errmsg.className = warning ? cls.warn : cls.error;
-      this.errmsg.textContent = msgs.map((m) => m.replace(/^Warning: /, "")).join(". ");
-      this.errmsg.hidden = msgs.length === 0;
+      this.errmsg.textContent = text;
+      this.errmsg.hidden = text === "";
     }
     destroy() {
       if (this.onWeeks) this.jsoneditor.unwatch("root.weeks", this.onWeeks);
@@ -166,6 +173,10 @@ export function register(JSONEditor) {
     build() {
       this.kind = this.options.perWeek?.kind || "number";
       this.state = { vary: false, values: [undefined] };
+      // drafts holds, by input index, text that doesn't parse: it stays in its
+      // input and is reported until corrected, while the document keeps the
+      // old value.
+      this.drafts = new Map();
       this.control = document.createElement("div");
       this.control.dataset.perWeek = this.path;
       const label = this.theme.getFormInputLabel(this.getTitle(), this.isRequired());
@@ -178,6 +189,8 @@ export function register(JSONEditor) {
         this.state = this.varyBox.checked
           ? { vary: true, values: Array(this.weeks()).fill(first) }
           : { vary: false, values: [first] };
+        this.drafts.clear();
+        this.showMessage();
         this.render();
         this.commit(core.perWeekValue(this.state));
       });
@@ -194,10 +207,17 @@ export function register(JSONEditor) {
     weeksChanged() {
       if (!this.state.vary || !this.weeksValid()) return; // keep values while Weeks is being retyped
       this.state = core.resize(this.state, this.weeks());
+      for (const i of [...this.drafts.keys()]) if (i >= this.state.values.length) this.drafts.delete(i);
+      this.showMessage();
       this.render();
       this.commit(core.perWeekValue(this.state));
     }
     setValue(value, initial) {
+      // A new value from outside (the JSON view, a moved row) replaces any draft.
+      if (this.drafts.size && JSON.stringify(value) !== JSON.stringify(this.value)) {
+        this.drafts.clear();
+        this.showMessage();
+      }
       this.state = core.perWeekFrom(value, this.weeks());
       this.value = core.perWeekValue(this.state);
       if (this.inputs) this.render();
@@ -217,18 +237,22 @@ export function register(JSONEditor) {
         el.inputMode = this.kind === "reps" ? "text" : "decimal";
         if (this.kind === "percent") el.placeholder = "%";
       }
-      el.value = core.formatValue(this.kind, v);
+      const draft = this.drafts.get(i);
+      el.value = draft ? draft.text : core.formatValue(this.kind, v);
+      if (draft) el.classList.add(...cls.invalid);
       el.setAttribute("aria-label", this.state.vary ? `${this.getTitle()} week ${i + 1}` : this.getTitle());
+      // Checked as you type (a mistake shows after a short pause, a fix at
+      // once); the value reaches the document on change, like other fields.
+      let timer;
+      el.addEventListener("input", () => {
+        clearTimeout(timer);
+        if (core.parseInput(this.kind, el.value).error) timer = setTimeout(() => this.check(i, el), 400);
+        else this.check(i, el);
+      });
       el.addEventListener("change", () => {
-        const r = core.parseInput(this.kind, el.value);
-        if (r.error) {
-          this.errmsg.textContent = r.error;
-          this.errmsg.hidden = false;
-          el.classList.add(...cls.invalid);
-          return;
-        }
-        el.classList.remove(...cls.invalid);
-        this.errmsg.hidden = true;
+        clearTimeout(timer);
+        const r = this.check(i, el);
+        if (r.error) return;
         const value = r.value === undefined && this.kind === "count" && this.state.vary ? null : r.value;
         this.state.values[i] = value;
         this.commit(core.perWeekValue(this.state));
@@ -237,6 +261,19 @@ export function register(JSONEditor) {
       const wrap = add(document.createElement("label"), "flex flex-col text-xs text-zinc-500");
       wrap.append(document.createTextNode(`W${i + 1}`), el);
       return wrap;
+    }
+    // check parses input i and records or clears its draft.
+    check(i, el) {
+      const r = core.parseInput(this.kind, el.value);
+      if (r.error) this.drafts.set(i, { text: el.value, error: r.error });
+      else this.drafts.delete(i);
+      for (const c of cls.invalid) el.classList.toggle(c, !!r.error);
+      this.showMessage();
+      return r;
+    }
+    draftMessages() {
+      return [...this.drafts.entries()].sort(([a], [b]) => a - b)
+        .map(([i, d]) => core.draftError(this.kind, d.error, this.state.values[i], this.state.vary ? i + 1 : null));
     }
     render() {
       this.varyBox.checked = this.state.vary;

@@ -13,6 +13,7 @@ const SHELL_FILES = [
   "/static/js/chart-data.js",
   "/static/js/companion-core.js",
   "/static/js/companion.js",
+  "/static/js/local-time.js",
   "/static/js/plan-form.js",
   "/static/js/plan-form-core.js",
   "/static/js/plan-form-theme.js",

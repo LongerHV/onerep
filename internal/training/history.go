@@ -84,7 +84,16 @@ func (s *Service) SetNotes(ctx context.Context, user store.User, sessionID, note
 	if len(notes) > 10000 {
 		return InvalidError{"notes are too long"}
 	}
-	_, err := s.Store.SetSessionNotes(ctx, user.ID, sessionID, notes, s.now(), "")
+	sess, err := s.Store.SessionByID(ctx, user.ID, sessionID)
+	if err != nil {
+		return err
+	}
+	// Like SaveSet: newer than a companion edit stamped a few minutes ahead.
+	at := s.now()
+	if sess.NotesUpdatedAt != nil && !at.After(*sess.NotesUpdatedAt) {
+		at = sess.NotesUpdatedAt.Add(time.Millisecond)
+	}
+	_, err = s.Store.SetSessionNotes(ctx, user.ID, sessionID, notes, at, "")
 	return err
 }
 
