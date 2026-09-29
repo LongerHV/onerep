@@ -68,10 +68,14 @@ function csrfToken() {
   }
 }
 
+// refreshToken fetches the session's CSRF token after a 403. It answers
+// "other-user" when the cookie now belongs to someone else (signed in from
+// another tab), since this page's operations must not sync under them.
 async function refreshToken() {
   const res = await fetch("/api/csrf", { credentials: "same-origin" });
   if (!res.ok) return false;
-  const { csrf } = await res.json();
+  const { csrf, user_id } = await res.json();
+  if (user_id !== USER) return "other-user";
   document.body.setAttribute("hx-headers", JSON.stringify({ "X-CSRF-Token": csrf }));
   return true;
 }
@@ -84,7 +88,7 @@ function notify() {
 }
 
 async function refreshCounts() {
-  syncStatus.pending = (await idb.all("outbox")).length;
+  syncStatus.pending = core.opsToSync(await idb.all("outbox"), USER).length;
   syncStatus.failedOps = await idb.all("failed");
   syncStatus.offline = !navigator.onLine;
   notify();
@@ -92,11 +96,12 @@ async function refreshCounts() {
 
 // flush sends queued operations in order. It is safe to call any time.
 async function flush() {
-  if (flushing || !navigator.onLine) return refreshCounts();
+  await ready;
+  if (flushing || !navigator.onLine || !USER) return refreshCounts();
   flushing = true;
   try {
     for (let retried = false; ; ) {
-      const ops = (await idb.all("outbox")).sort((a, b) => (a.op_id < b.op_id ? -1 : 1)).slice(0, 100);
+      const ops = core.opsToSync(await idb.all("outbox"), USER).sort((a, b) => (a.op_id < b.op_id ? -1 : 1)).slice(0, 100);
       if (ops.length === 0) break;
       const res = await fetch("/api/sync", {
         method: "POST",
@@ -108,9 +113,16 @@ async function flush() {
         syncStatus.relogin = true;
         break;
       }
-      if (res.status === 403 && !retried && (await refreshToken())) {
-        retried = true;
-        continue;
+      if (res.status === 403 && !retried) {
+        const refreshed = await refreshToken();
+        if (refreshed === "other-user") {
+          syncStatus.relogin = true;
+          break;
+        }
+        if (refreshed) {
+          retried = true;
+          continue;
+        }
       }
       if (!res.ok) {
         // Say so instead of showing "unsynced" forever; retried every 30 s.
@@ -138,6 +150,94 @@ window.addEventListener("offline", refreshCounts);
 setInterval(() => {
   if (syncStatus.pending > 0) flush();
 }, 30_000);
+
+// --- offline data: owner, logout, pruning ----------------------------------------
+
+// USER is the signed-in user this page was rendered for ("" when signed out,
+// and on the offline page). Everything stored offline belongs to one user,
+// recorded under OWNER_KEY; see core.offlineOwner.
+const USER = document.body.dataset.user || "";
+const OWNER_KEY = "onerep.offline-owner";
+
+function storedOwner() {
+  try {
+    return localStorage.getItem(OWNER_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function setOwner(user) {
+  try {
+    if (user) localStorage.setItem(OWNER_KEY, user);
+    else localStorage.removeItem(OWNER_KEY);
+  } catch {
+    // Storage unavailable: operations still carry their user (core.opsToSync).
+  }
+}
+
+// clearOffline forgets everything stored offline: saved sessions, queued and
+// rejected operations, and cached workout pages.
+async function clearOffline() {
+  const stores = ["sessions", "outbox", "failed"];
+  await tx(stores, "readwrite", (t) => stores.forEach((name) => t.objectStore(name).clear()));
+  await window.caches?.delete("pages");
+  setOwner(null);
+}
+
+// prune forgets old synced sessions, their rejected operations and cached
+// pages (core.prunePlan); never anything still queued. The stores are read
+// and pruned in one transaction, so an operation queued meanwhile counts.
+async function prune() {
+  const current = location.pathname.match(/^\/sessions\/([^/]+)\/live$/)?.[1] ?? null;
+  const cache = await window.caches?.open("pages");
+  const pages = cache ? (await cache.keys()).map((r) => new URL(r.url).pathname) : [];
+  let plan = { pages: [] };
+  await tx(["sessions", "outbox", "failed"], "readwrite", (t) => {
+    const [sessions, outbox, failed] = ["sessions", "outbox", "failed"].map((n) => t.objectStore(n).getAll());
+    failed.onsuccess = () => { // requests complete in order: sessions and outbox are read too
+      plan = core.prunePlan({ sessions: sessions.result, outbox: outbox.result, failed: failed.result, pages, now: Date.now(), current });
+      for (const id of plan.sessions) t.objectStore("sessions").delete(id);
+      for (const id of plan.failed) t.objectStore("failed").delete(id);
+    };
+  });
+  for (const path of plan.pages) await cache.delete(path);
+}
+
+// ready settles who owns the offline data before anything reads or syncs it:
+// the signed-out page clears it (for browsers that ignore the logout's
+// Clear-Site-Data), a signed-in page discards another user's.
+const ready = (async () => {
+  try {
+    if (!USER) {
+      if (document.querySelector("[data-signed-out]")) await clearOffline();
+      return;
+    }
+    const decision = core.offlineOwner(storedOwner(), USER);
+    if (decision === "discard") await clearOffline();
+    if (decision !== "keep") setOwner(USER);
+    await prune();
+  } catch (err) {
+    console.warn("offline data check failed", err);
+  }
+})();
+
+// Logging out clears offline data, so sync first, and ask before dropping
+// changes that could not be synced.
+document.addEventListener("submit", async (e) => {
+  const form = e.target;
+  if (!(form instanceof HTMLFormElement) || form.getAttribute("action") !== "/auth/logout") return;
+  e.preventDefault();
+  try {
+    await flush();
+    const left = core.opsToSync(await idb.all("outbox"), USER).length;
+    const lose = `${left} change${left === 1 ? "" : "s"} could not be synced and will be lost. Log out anyway?`;
+    if (left > 0 && !confirm(lose)) return;
+  } catch (err) {
+    console.warn("could not check unsynced changes", err);
+  }
+  form.submit();
+});
 
 // --- rendering helpers ---------------------------------------------------------
 
@@ -190,6 +290,7 @@ class Companion {
   }
 
   async start() {
+    await ready; // another user's offline data is gone first
     const saved = await idb.get("sessions", this.boot.session.id).catch(() => null);
     this.state = core.mergeServerSets(this.boot, saved || core.newState(this.boot), this.boot.sets);
     if (this.boot.session.finished) this.state.finished = true;
@@ -267,7 +368,7 @@ class Companion {
   }
 
   async save() {
-    await idb.put("sessions", this.state);
+    await idb.put("sessions", { ...this.state, savedAt: Date.now() }); // savedAt dates it for core.prunePlan
   }
 
   // apply stores a new state and queues its operation, then syncs.
@@ -275,7 +376,8 @@ class Companion {
     this.state = state;
     this.writing++;
     try {
-      await idb.saveWithOp(state, op);
+      // savedAt dates the state for core.prunePlan; the op syncs only under its user (core.opsToSync).
+      await idb.saveWithOp({ ...state, savedAt: Date.now() }, op && { ...op, user: USER });
     } finally {
       this.writing--;
     }

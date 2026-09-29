@@ -47,7 +47,8 @@ func TestLoginErrorIsAPage(t *testing.T) {
 	}
 }
 
-// Signing out with an expired session (or none) just shows the signed-out page.
+// Signing out with an expired session (or none) just shows the signed-out page,
+// and still clears the offline data an expired session left in the browser.
 func TestLogoutWithoutSession(t *testing.T) {
 	srv, c := newOIDCApp(t)
 	resp, err := c.PostForm(srv.URL+"/auth/logout", nil)
@@ -55,8 +56,9 @@ func TestLogoutWithoutSession(t *testing.T) {
 		t.Fatal(err)
 	}
 	resp.Body.Close()
-	if resp.StatusCode != http.StatusSeeOther || resp.Header.Get("Location") != "/auth/signed-out" {
-		t.Fatalf("logout without a session: %d %s", resp.StatusCode, resp.Header.Get("Location"))
+	if resp.StatusCode != http.StatusSeeOther || resp.Header.Get("Location") != "/auth/signed-out" ||
+		resp.Header.Get("Clear-Site-Data") != `"cache", "storage"` {
+		t.Fatalf("logout without a session: %d %s Clear-Site-Data=%q", resp.StatusCode, resp.Header.Get("Location"), resp.Header.Get("Clear-Site-Data"))
 	}
 	u, _ := url.Parse(srv.URL)
 	c.Jar.SetCookies(u, []*http.Cookie{{Name: auth.CookieName, Value: "expired"}})
@@ -65,7 +67,8 @@ func TestLogoutWithoutSession(t *testing.T) {
 		t.Fatal(err)
 	}
 	resp.Body.Close()
-	if resp.StatusCode != http.StatusSeeOther || resp.Header.Get("Location") != "/auth/signed-out" {
-		t.Fatalf("logout with an expired session: %d %s", resp.StatusCode, resp.Header.Get("Location"))
+	if resp.StatusCode != http.StatusSeeOther || resp.Header.Get("Location") != "/auth/signed-out" ||
+		resp.Header.Get("Clear-Site-Data") != `"cache", "storage"` {
+		t.Fatalf("logout with an expired session: %d %s Clear-Site-Data=%q", resp.StatusCode, resp.Header.Get("Location"), resp.Header.Get("Clear-Site-Data"))
 	}
 }

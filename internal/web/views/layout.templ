@@ -25,6 +25,7 @@ templ Layout(p Page) {
 			hx-swap="innerHTML show:window:top"
 			if p.Identity != nil {
 				hx-headers={ csrfHeaders(p.Identity.CSRFToken) }
+				data-user={ p.Identity.User.ID }
 			}
 		>
 			<header class="border-b border-zinc-200 dark:border-zinc-800">

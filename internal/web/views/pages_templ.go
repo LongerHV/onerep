@@ -518,7 +518,7 @@ func SignedOut(p Page) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 43, "\">Signed out</h1><p class=\"mt-2\"><a href=\"/auth/login\" class=\"underline\" hx-boost=\"false\">Sign in again</a></p>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 43, "\" data-signed-out>Signed out</h1><p class=\"mt-2\"><a href=\"/auth/login\" class=\"underline\" hx-boost=\"false\">Sign in again</a></p>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}

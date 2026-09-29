@@ -67,7 +67,7 @@ templ Home(p Page, h HomePage) {
 }
 
 templ SignedOut(p Page) {
-	<h1 class={ h1 }>Signed out</h1>
+	<h1 class={ h1 } data-signed-out>Signed out</h1>
 	<p class="mt-2"><a href="/auth/login" class="underline" hx-boost="false">Sign in again</a></p>
 }
 
