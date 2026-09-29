@@ -231,7 +231,8 @@ func TestServiceWorkerAndOfflinePage(t *testing.T) {
 func TestServiceWorkerShellUsesHashedURLs(t *testing.T) {
 	srv, c := newApp(t, "")
 	_, body := getWith(t, c, srv.URL+"/sw.js")
-	for _, name := range []string{"app.css", "js/companion.js", "js/calc.js", "vendor/htmx.min.js"} {
+	for _, name := range []string{"app.css", "js/companion.js", "js/calc.js", "vendor/htmx.min.js",
+		"manifest.webmanifest", "icons/icon.svg", "icons/icon-192.png"} {
 		if !strings.Contains(body, strconv.Quote(static.URL(name))) {
 			t.Errorf("sw.js misses %s", static.URL(name))
 		}

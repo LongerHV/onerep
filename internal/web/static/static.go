@@ -17,7 +17,7 @@ import (
 
 // Every served file or directory must be listed here; Go files are not.
 //
-//go:embed app.css js vendor
+//go:embed app.css manifest.webmanifest icons js vendor
 var files embed.FS
 
 // FS holds the static files, named as under /static/.
@@ -88,6 +88,14 @@ var ImportMap = sync.OnceValue(func() string {
 	return string(b)
 })
 
+// Favicon answers /favicon.ico, which browsers and other clients request
+// without looking at the page.
+func Favicon(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "image/x-icon")
+	w.Header().Set("Cache-Control", "public, max-age=86400")
+	http.ServeFileFS(w, r, FS, "icons/favicon.ico")
+}
+
 // Version is a hash of all static files.
 func Version() string { return idx().version }
 
@@ -105,6 +113,9 @@ func Handler() http.Handler {
 			} else {
 				w.Header().Set("Cache-Control", "no-cache")
 			}
+		}
+		if strings.HasSuffix(name, ".webmanifest") {
+			w.Header().Set("Content-Type", "application/manifest+json")
 		}
 		files.ServeHTTP(w, r)
 	})

@@ -12,6 +12,9 @@ const SHELL_FILES = [
   "/offline",
   ...[
     "/static/app.css",
+    "/static/manifest.webmanifest",
+    "/static/icons/icon.svg",
+    "/static/icons/icon-192.png",
     "/static/vendor/htmx.min.js",
     "/static/vendor/uplot/uPlot.min.css",
     "/static/js/calc.js",

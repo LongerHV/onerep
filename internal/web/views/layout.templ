@@ -13,6 +13,11 @@ templ Layout(p Page) {
 			<meta name="viewport" content="width=device-width, initial-scale=1"/>
 			<title>{ p.Title } · onerep</title>
 			<meta name="htmx-config" content={ htmxConfig }/>
+			<meta name="theme-color" content="#fafafa" media="(prefers-color-scheme: light)"/>
+			<meta name="theme-color" content="#09090b" media="(prefers-color-scheme: dark)"/>
+			<link rel="manifest" href={ static.URL("manifest.webmanifest") }/>
+			<link rel="icon" href={ static.URL("icons/icon.svg") } type="image/svg+xml"/>
+			<link rel="apple-touch-icon" href={ static.URL("icons/apple-touch-icon.png") }/>
 			<link rel="stylesheet" href={ static.URL("app.css") }/>
 			<link rel="stylesheet" href={ static.URL("vendor/uplot/uPlot.min.css") }/>
 			@templ.Raw(`<script type="importmap">` + static.ImportMap() + `</script>`)

@@ -3,6 +3,7 @@ package static_test
 import (
 	"encoding/json"
 	"io"
+	"io/fs"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -108,6 +109,50 @@ func TestURLsListsEveryFile(t *testing.T) {
 	b, _ := io.ReadAll(resp.Body)
 	if !strings.Contains(string(b), "export") {
 		t.Fatal("calc.js body")
+	}
+}
+
+func TestManifest(t *testing.T) {
+	b, err := fs.ReadFile(static.FS, "manifest.webmanifest")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var m struct {
+		Name            string `json:"name"`
+		Display         string `json:"display"`
+		StartURL        string `json:"start_url"`
+		ThemeColor      string `json:"theme_color"`
+		BackgroundColor string `json:"background_color"`
+		Icons           []struct {
+			Src     string `json:"src"`
+			Sizes   string `json:"sizes"`
+			Purpose string `json:"purpose"`
+		} `json:"icons"`
+	}
+	if err := json.Unmarshal(b, &m); err != nil {
+		t.Fatal(err)
+	}
+	if ct := get(t, static.URL("manifest.webmanifest")).Header.Get("Content-Type"); ct != "application/manifest+json" {
+		t.Errorf("Content-Type %q", ct)
+	}
+	if m.Name != "onerep" || m.Display != "standalone" || m.StartURL != "/" || m.ThemeColor == "" || m.BackgroundColor == "" {
+		t.Fatalf("manifest %+v", m)
+	}
+	have := map[string]bool{}
+	for _, ic := range m.Icons {
+		name, ok := strings.CutPrefix(ic.Src, "/static/")
+		if !ok {
+			t.Fatalf("icon %s is not under /static/", ic.Src)
+		}
+		if _, err := fs.Stat(static.FS, name); err != nil {
+			t.Errorf("icon %s: %v", ic.Src, err)
+		}
+		have[ic.Sizes+" "+ic.Purpose] = true
+	}
+	for _, want := range []string{"192x192 any", "512x512 any", "512x512 maskable"} {
+		if !have[want] {
+			t.Errorf("manifest has no %s icon", want)
+		}
 	}
 }
 
